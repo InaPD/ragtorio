@@ -12,8 +12,8 @@ from typing import Any
 import httpx
 import respx
 
-from field_assistant.harvest.client import MediaWikiClient
-from field_assistant.harvest.probe import probe
+from ragtorio.harvest.client import MediaWikiClient
+from ragtorio.harvest.probe import probe
 
 API = "https://example.test/api.php"
 SITE_ROOT = "https://example.test/"

@@ -11,8 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from field_assistant.config import Settings, load_profile
-from field_assistant.harvest.client import MediaWikiClient
+from ragtorio.config import Settings, load_profile
+from ragtorio.harvest.client import MediaWikiClient
 
 OUT = Path("tests/fixtures/wikitext/factorio")
 

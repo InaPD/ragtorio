@@ -3,7 +3,7 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "field-assistant"
+name = "ragtorio"
 version = "0.1.0"
 description = "Knowledge-graph and vector RAG over crafting-game wikis"
 readme = "README.md"
@@ -30,7 +30,7 @@ dev = [
 ]
 
 [project.scripts]
-fa = "field_assistant.cli:app"
+ragtorio = "ragtorio.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -52,7 +52,7 @@ python_version = "3.12"
 strict = true
 warn_unreachable = true
 mypy_path = "src"
-packages = ["field_assistant"]
+packages = ["ragtorio"]
 
 [[tool.mypy.overrides]]
 module = ["tests.*"]
@@ -60,5 +60,5 @@ disallow_untyped_defs = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --cov=field_assistant --cov-report=term-missing --cov-fail-under=80"
+addopts = "-q --cov=ragtorio --cov-report=term-missing --cov-fail-under=80"
 pythonpath = ["src"]

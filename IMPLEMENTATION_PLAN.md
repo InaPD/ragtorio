@@ -1,4 +1,4 @@
-# field-assistant - Implementation Plan
+# Ragtorio - Implementation Plan
 
 Knowledge-graph plus vector RAG over the Factorio wiki, built so a second crafting-game wiki is a config file rather than a rewrite.
 
@@ -10,7 +10,7 @@ Knowledge-graph plus vector RAG over the Factorio wiki, built so a second crafti
 
 ## 0. What this document is
 
-The build plan for `field-assistant`, phase by phase, with an exit criterion per phase. Everything in section 2 was verified against the live wiki API on 2026-09-13.
+The build plan for Ragtorio, phase by phase, with an exit criterion per phase. Everything in section 2 was verified against the live wiki API on 2026-09-13.
 
 The thesis: **multi-hop questions players actually ask ("what raw ore does a rocket silo cost", "what research do I need before oil processing") are answered by a knowledge graph extracted 100% deterministically from wiki templates, with prose retrieved alongside from a vector index, and the hybrid beats a vector-only baseline by a widening margin as hop count grows, verified against the game's own data.**
 
@@ -195,7 +195,7 @@ Estimates are in working days. Parsers and the extractor are tested against comm
 
 ### Phase 0 - Foundations (1.5 days)
 
-**Work.** `pyproject.toml` (ruff, mypy, pytest, 80% coverage gate), `docker-compose.yml` with `postgres:16` + pgvector and `neo4j:5`, `.env.example`, GitHub Actions for lint and tests. `fa probe <api_url>` as a small CLI command (already prototyped; it produced section 2). Commit wikitext fixtures for six pages and their `Infobox:` pages: `Iron gear wheel`, `Electronic circuit`, `Advanced oil processing`, `Kovarex enrichment process`, `Automation (research)`, `Assembling machine 2`. Crawl the titles and content of namespace 3002 once and enumerate the real `prototype-type` value set; complete `type_map` so every value is mapped or explicitly ignored.
+**Work.** `pyproject.toml` (ruff, mypy, pytest, 80% coverage gate), `docker-compose.yml` with `postgres:16` + pgvector and `neo4j:5`, `.env.example`, GitHub Actions for lint and tests. `ragtorio probe <api_url>` as a small CLI command (already prototyped; it produced section 2). Commit wikitext fixtures for six pages and their `Infobox:` pages: `Iron gear wheel`, `Electronic circuit`, `Advanced oil processing`, `Kovarex enrichment process`, `Automation (research)`, `Assembling machine 2`. Crawl the titles and content of namespace 3002 once and enumerate the real `prototype-type` value set; complete `type_map` so every value is mapped or explicitly ignored.
 
 **Exit.** Green CI. `docker compose up` gives two healthy databases. Profile complete against the actual value set.
 
@@ -207,15 +207,15 @@ Estimates are in working days. Parsers and the extractor are tested against comm
 
 ### Phase 2 - Template extraction (3 days)
 
-**Work.** `extract/models.py`: frozen pydantic `Fact(subject, subject_labels, predicate, object, object_labels, props, provenance)`. `extract/base.py`: `StructuredExtractor` protocol (one method; it exists so a Lua or Cargo extractor can be added without touching callers). `extract/template.py`: `TemplateExtractor` that walks from an article to its `Infobox:` page, applies `type_map`, maps `fields` through named parsers, walks `{{history}}` for version events. `extract/parsers/`: `factorio_recipe_expr` (handles `Time`, decimals, multi-output with probabilities as they actually appear in the fixtures), `plus_list`, scalars. Written test-first. `fa extract factorio` writes `fact` rows and prints a coverage report: infobox pages seen, pages yielding facts, unknown parameters with counts, parser failures with the offending value.
+**Work.** `extract/models.py`: frozen pydantic `Fact(subject, subject_labels, predicate, object, object_labels, props, provenance)`. `extract/base.py`: `StructuredExtractor` protocol (one method; it exists so a Lua or Cargo extractor can be added without touching callers). `extract/template.py`: `TemplateExtractor` that walks from an article to its `Infobox:` page, applies `type_map`, maps `fields` through named parsers, walks `{{history}}` for version events. `extract/parsers/`: `factorio_recipe_expr` (handles `Time`, decimals, multi-output with probabilities as they actually appear in the fixtures), `plus_list`, scalars. Written test-first. `ragtorio extract factorio` writes `fact` rows and prints a coverage report: infobox pages seen, pages yielding facts, unknown parameters with counts, parser failures with the offending value.
 
 **Exit.** ≥95% of infobox pages yield at least one fact. Every unknown parameter seen more than 5 times is mapped or ignored in the profile. Parser tests at 100%, extractor ≥85%.
 
 ### Phase 3 - Entity resolution and graph (3 days)
 
-**Work.** `ontology/resolve.py`: canonical id from title, redirects become `aliases`, `wikis/factorio.aliases.yaml` for community shorthand ("green circuit", "red belt", "blue science"), normalisation, unresolved references logged rather than created. Page-to-node rules applied: `Recipe` nodes named `{title} (recipe)` where an Item page carries a recipe. `ontology/schema.cypher`: uniqueness on `id`, indexes on `title`, `aliases`, `internal_name`. `ontology/load.py`: batched `UNWIND $rows MERGE`, idempotent on `(subject, predicate, object)`. `is_archived` from namespace 3004 and `Category:Archived`; `introduced_in` from `{{history}}`. `fa graph check`: orphans, recipes missing inputs or outputs, unresolved references, cycles listed (Kovarex is a legitimate cycle). First Cypher template, `recipe_tree`, with amounts multiplied level by level in Python.
+**Work.** `ontology/resolve.py`: canonical id from title, redirects become `aliases`, `wikis/factorio.aliases.yaml` for community shorthand ("green circuit", "red belt", "blue science"), normalisation, unresolved references logged rather than created. Page-to-node rules applied: `Recipe` nodes named `{title} (recipe)` where an Item page carries a recipe. `ontology/schema.cypher`: uniqueness on `id`, indexes on `title`, `aliases`, `internal_name`. `ontology/load.py`: batched `UNWIND $rows MERGE`, idempotent on `(subject, predicate, object)`. `is_archived` from namespace 3004 and `Category:Archived`; `introduced_in` from `{{history}}`. `ragtorio graph check`: orphans, recipes missing inputs or outputs, unresolved references, cycles listed (Kovarex is a legitimate cycle). First Cypher template, `recipe_tree`, with amounts multiplied level by level in Python.
 
-**Exit.** `fa ask factorio "raw ore for one electronic circuit" --graph-only` prints the nested tree with correct iron and copper totals against the `data.raw` fixture pulled early. Zero unresolved references above a documented allowlist.
+**Exit.** `ragtorio ask factorio "raw ore for one electronic circuit" --graph-only` prints the nested tree with correct iron and copper totals against the `data.raw` fixture pulled early. Zero unresolved references above a documented allowlist.
 
 ### Phase 4 - Vector index (2 days)
 
@@ -244,7 +244,7 @@ Estimates are in working days. Parsers and the extractor are tested against comm
 
 ### Phase 7 - Benchmark (3 days)
 
-**Work.** `bench/ground_truth.py`: load `data-raw-dump.json` (from `factorio --dump-data` on a local install, or a community export), build the true recipe and technology graph keyed by `internal_name`. `bench/generate.py`: sample paths of known hop length and template them into questions; strata of 60 to 100: 1-hop (stack size), 2-hop (ingredients), 3-hop+ (total raw ore), aggregation (recipes consuming X), prerequisite chains, and out-of-scope questions the system must refuse. Hop labels are correct by construction; phrasing hand-checked once. Baselines: vector-only over identical chunks and graph-only, same generator, same grader. Grading: exact match on quantities and sets; Claude-judged with a strict rubric on the few prose answers, spot-checked by hand. `fa bench` writes `docs/benchmark.md`: accuracy by hop count per system, p50/p95 latency, cost per query.
+**Work.** `bench/ground_truth.py`: load `data-raw-dump.json` (from `factorio --dump-data` on a local install, or a community export), build the true recipe and technology graph keyed by `internal_name`. `bench/generate.py`: sample paths of known hop length and template them into questions; strata of 60 to 100: 1-hop (stack size), 2-hop (ingredients), 3-hop+ (total raw ore), aggregation (recipes consuming X), prerequisite chains, and out-of-scope questions the system must refuse. Hop labels are correct by construction; phrasing hand-checked once. Baselines: vector-only over identical chunks and graph-only, same generator, same grader. Grading: exact match on quantities and sets; Claude-judged with a strict rubric on the few prose answers, spot-checked by hand. `ragtorio bench` writes `docs/benchmark.md`: accuracy by hop count per system, p50/p95 latency, cost per query.
 
 **Exit.** N ≥ 60. The curve exists: near parity at 1 hop, hybrid ahead at 3+. If it is not ahead, that is the result and it gets written up as such.
 
@@ -290,11 +290,11 @@ The 20 days assume full working days; at half time it is 8 weeks. If it must shr
 ## 10. Repository layout
 
 ```
-field-assistant/
+ragtorio/
   IMPLEMENTATION_PLAN.md   README.md   pyproject.toml   docker-compose.yml   .env.example
   wikis/         factorio.yaml   factorio.aliases.yaml
-  src/field_assistant/
-    cli.py                 fa probe | harvest | extract | graph | index | ask | bench
+  src/ragtorio/
+    cli.py                 ragtorio probe | harvest | extract | graph | index | ask | bench
     config.py              settings + profile loader (pydantic)
     harvest/    client.py  crawl.py  store.py
     extract/    models.py  base.py  template.py  parsers/{recipe_expr,lists,scalars}.py
@@ -313,7 +313,7 @@ Files stay under 400 lines.
 
 ## 11. Where this will go wrong
 
-- **Trusting the extension list.** SMW is installed and empty. `fa probe` checks for populated data, not installed extensions.
+- **Trusting the extension list.** SMW is installed and empty. `ragtorio probe` checks for populated data, not installed extensions.
 - **Missing namespace 3002.** No infoboxes, no graph.
 - **Ingesting `/de`, `/ja`, `/zh` subpages** and building a 20x graph.
 - **A page is not a node.** Items, recipes and processes do not map one-to-one to pages.
@@ -325,7 +325,7 @@ Files stay under 400 lines.
 
 ## 12. First week
 
-1. Phase 0 in full: scaffold, compose, `fa probe`, fixtures, `prototype-type` value set, finished profile.
+1. Phase 0 in full: scaffold, compose, `ragtorio probe`, fixtures, `prototype-type` value set, finished profile.
 2. Phase 1 harvester over namespaces 0, 3002 and 3004. Check the counts against the expected ranges.
 3. `factorio_recipe_expr` and `plus_list`, test-first, against the fixtures.
 4. Begin `TemplateExtractor`; run the first coverage report by the end of the week.

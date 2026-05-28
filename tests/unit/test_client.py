@@ -10,7 +10,7 @@ import httpx
 import pytest
 import respx
 
-from field_assistant.harvest.client import (
+from ragtorio.harvest.client import (
     DEFAULT_MAXLAG,
     MediaWikiClient,
     MediaWikiError,

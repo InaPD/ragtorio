@@ -1,6 +1,6 @@
 """Command-line entry point.
 
-Phase 0 ships ``fa probe`` (inspect a wiki) and ``fa profile`` (validate one we wrote).
+Phase 0 ships ``ragtorio probe`` (inspect a wiki) and ``ragtorio profile`` (validate one we wrote).
 Later phases add harvest, extract, graph, index, ask and bench.
 """
 
@@ -10,10 +10,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from field_assistant.config import Settings, load_profile
-from field_assistant.harvest.client import MediaWikiClient
-from field_assistant.harvest.probe import ProbeResult
-from field_assistant.harvest.probe import probe as run_probe
+from ragtorio.config import Settings, load_profile
+from ragtorio.harvest.client import MediaWikiClient
+from ragtorio.harvest.probe import ProbeResult
+from ragtorio.harvest.probe import probe as run_probe
 
 app = typer.Typer(
     help="Knowledge-graph and vector RAG over crafting-game wikis.",
@@ -38,7 +38,7 @@ def probe(
     settings = Settings()
     if settings.contact_email == "you@example.com":
         console.print(
-            "[yellow]warning:[/] FA_CONTACT_EMAIL is unset, so the User-Agent has no real "
+            "[yellow]warning:[/] RAGTORIO_CONTACT_EMAIL is unset, so the User-Agent has no real "
             "contact address. Set it in .env before any large crawl."
         )
     with MediaWikiClient(api_url, settings.user_agent, rps=rps) as client:

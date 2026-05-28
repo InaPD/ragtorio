@@ -2,15 +2,15 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: field_assistant
-      POSTGRES_PASSWORD: field_assistant
-      POSTGRES_DB: field_assistant
+      POSTGRES_USER: ragtorio
+      POSTGRES_PASSWORD: ragtorio
+      POSTGRES_DB: ragtorio
     ports:
       - "5433:5432"          # 5433 on the host to avoid clashing with a local postgres
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U field_assistant -d field_assistant"]
+      test: ["CMD-SHELL", "pg_isready -U ragtorio -d ragtorio"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -18,7 +18,7 @@ services:
   neo4j:
     image: neo4j:5-community
     environment:
-      NEO4J_AUTH: neo4j/field_assistant
+      NEO4J_AUTH: neo4j/ragtorio
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_server_memory_heap_max__size: 1G
     ports:

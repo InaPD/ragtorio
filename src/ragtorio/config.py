@@ -41,20 +41,18 @@ _TO_PATTERN = re.compile(r"^(?:prop\.[a-z][a-z0-9_]*|rel\.[A-Z][A-Z0-9_]*|recipe
 class Settings(BaseSettings):
     """Runtime settings, read from the environment or a local ``.env``."""
 
-    model_config = SettingsConfigDict(env_prefix="FA_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="RAGTORIO_", env_file=".env", extra="ignore")
 
     contact_email: str = "you@example.com"
-    postgres_dsn: str = (
-        "postgresql://field_assistant:field_assistant@localhost:5433/field_assistant"
-    )
+    postgres_dsn: str = "postgresql://ragtorio:ragtorio@localhost:5433/ragtorio"
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
-    neo4j_password: str = "field_assistant"
+    neo4j_password: str = "ragtorio"
 
     @property
     def user_agent(self) -> str:
         """Identify the crawler and give operators a way to reach us, as they expect."""
-        return f"field-assistant/0.1 (wiki RAG research; contact: {self.contact_email})"
+        return f"ragtorio/0.1 (wiki RAG research; contact: {self.contact_email})"
 
 
 class LanguageFilter(BaseModel):

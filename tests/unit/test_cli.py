@@ -7,7 +7,7 @@ import httpx
 import respx
 from typer.testing import CliRunner
 
-from field_assistant.cli import app
+from ragtorio.cli import app
 
 runner = CliRunner()
 API = "https://example.test/api.php"

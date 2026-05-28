@@ -1,4 +1,4 @@
-# field-assistant
+# Ragtorio
 
 Knowledge-graph and vector RAG over the [Factorio wiki](https://wiki.factorio.com), built
 so a second crafting-game wiki is a config file rather than a rewrite.
@@ -19,7 +19,7 @@ The Factorio wiki advertises Semantic MediaWiki, which would hand you a typed gr
 free. It is installed and **empty** - four properties, all SMW's own built-ins:
 
 ```
-$ fa probe https://wiki.factorio.com/api.php
+$ ragtorio probe https://wiki.factorio.com/api.php
 
 structured data  extension: SemanticMediaWiki
   installed_but_empty  4 properties, all SMW built-ins; parse infobox templates instead
@@ -28,7 +28,7 @@ structured data  extension: SemanticMediaWiki
 Every game wiki checked tells the same story. The Stardew Valley wiki advertises Cargo and
 declares zero tables; Minecraft, Terraria, OSRS and the Fandom wikis have no structured
 extension at all. **Template parsing is the only path that generalises**, which is why
-`fa probe` reports whether a store is *populated* rather than merely installed.
+`ragtorio probe` reports whether a store is *populated* rather than merely installed.
 
 ## What Phase 0 measured
 
@@ -60,11 +60,11 @@ make install          # venv + dependencies
 make up               # postgres (pgvector) + neo4j via docker compose
 make check            # ruff, mypy strict, pytest with an 80% coverage gate
 
-fa probe https://wiki.factorio.com/api.php   # inspect any MediaWiki wiki
-fa profile factorio                          # validate the shipped wiki profile
+ragtorio probe https://wiki.factorio.com/api.php   # inspect any MediaWiki wiki
+ragtorio profile factorio                          # validate the shipped wiki profile
 ```
 
-Copy `.env.example` to `.env` and set `FA_CONTACT_EMAIL` before any crawl - wiki operators
+Copy `.env.example` to `.env` and set `RAGTORIO_CONTACT_EMAIL` before any crawl - wiki operators
 expect a working contact address in the User-Agent.
 
 ## Adding a wiki
@@ -73,9 +73,9 @@ A wiki is described by one YAML file in [`wikis/`](wikis/), validated on load. N
 `src/` is Factorio-specific.
 
 ```bash
-fa probe https://example.wiki/api.php     # what does it run, and is the data real?
+ragtorio probe https://example.wiki/api.php     # what does it run, and is the data real?
 cp wikis/factorio.yaml wikis/newwiki.yaml # edit namespaces, fields, type map
-fa profile newwiki                        # fails loudly on a typo
+ragtorio profile newwiki                        # fails loudly on a typo
 ```
 
 If the new wiki's infobox grammar differs, add one pure function to
@@ -85,8 +85,8 @@ If the new wiki's infobox grammar differs, add one pure function to
 
 ```
 wikis/factorio.yaml          the whole Factorio-specific surface
-src/field_assistant/
-  cli.py                     fa probe | profile  (harvest, extract, ... to come)
+src/ragtorio/
+  cli.py                     ragtorio probe | profile  (harvest, extract, ... to come)
   config.py                  profile schema and loader, validated with pydantic
   harvest/client.py          rate-limited, retrying MediaWiki client
   harvest/probe.py           installed-versus-populated structured-data check

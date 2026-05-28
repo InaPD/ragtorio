@@ -14,7 +14,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from field_assistant.config import (
+from ragtorio.config import (
     InfoboxConfig,
     Settings,
     TypeRule,
@@ -167,7 +167,7 @@ def test_load_profile_roundtrip(tmp_path: Path, minimal_profile_data: dict[str, 
 
 def test_settings_user_agent_carries_contact() -> None:
     agent = Settings(contact_email="someone@example.org").user_agent
-    assert "field-assistant" in agent
+    assert "ragtorio" in agent
     assert "someone@example.org" in agent
 
 

@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from field_assistant.harvest.client import MediaWikiClient, MediaWikiError
+from ragtorio.harvest.client import MediaWikiClient, MediaWikiError
 
 #: Extensions that can hold typed data, as opposed to merely querying or templating it.
 STRUCTURED_EXTENSIONS = ("SemanticMediaWiki", "Cargo")
@@ -180,7 +180,7 @@ def _html_accessible(api_url: str) -> bool | None:
     try:
         response = httpx.get(
             root,
-            headers={"User-Agent": "field-assistant/0.1 (access check)"},
+            headers={"User-Agent": "ragtorio/0.1 (access check)"},
             timeout=15.0,
             follow_redirects=True,
         )
