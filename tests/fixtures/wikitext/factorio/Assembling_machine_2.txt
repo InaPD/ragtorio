@@ -1,0 +1,73 @@
+{{Languages}}
+{{:Infobox:Assembling machine 2}}
+
+The '''assembling machine 2''' is an upgraded version of the assembling machine. It has a faster [[crafting]] speed and higher power consumption than the [[assembling machine 1]]. Unlike the first assembling machine, the assembling machine 2 supports crafting with fluids and using [[module|modules]] to increase the speed or efficiency of production.
+
+It can make recipes that include liquids as one of their ingredients (e.g. [[processing unit]]) or products (e.g. [[empty crude oil barrel]]). The input pipe/output pipe connects to the centre of a side. The pipe will only connect when a recipe that requires or produces a liquid is selected. The pipe starts at the top by default, but its location can be rotated by hovering over the machine and pressing {{Keybinding|R}}.
+
+== Notes == 
+
+* An [[assembling machine 2]] with two [[efficiency module]] needs less energy than one [[assembling machine 1]].
+
+== History ==
+{{history|2.0.7|
+* Assembling machines can be configured via circuit networks.}}
+
+{{history|0.17.0|
+* Crafting capability increased from 4 to unlimited recipe ingredients.
+* Assembling machine 2 recipe changed to require 2x Steel plate instead of 9x Iron plate.
+}}
+
+{{history|0.15.0|
+* Copying from assembling machines to filter inserters will set the filters to the ingredients of the assembling machine recipe.}}
+
+{{history|0.12.1|
+* Changed assembling machines' auto-insertion behavior when using speed modules. Faster speed with fast recipes will insert more items, sooner.}}
+
+{{history|0.12.0|
+* Assembling machine input slot can contain more than the usual stack size when the recipe requirement demands it.}}
+
+{{history|0.10.7|
+* Fast replacing assembling machine keeps the direction of the original assembling machine.}}
+
+{{history|0.10.1|
+* Update icons}}
+
+{{history|0.9.2|
+* Assembling Machines 2 and 3 have an input and output pipe.}}
+
+{{history|0.9.0|
+* Productivity modules can only be used in assembling machines producing intermediate products.}}
+
+{{history|0.8.0|
+* Crafting speed of assembling machine is relative to manual crafting speed.}}
+
+{{history|0.7.3|
+* Reset bonus production of machine when recipe is changed.}}
+
+{{history|0.7.0|
+* Pollution mechanic introduced.}}
+
+{{history|0.6.0|
+* Added support for modules.}}
+
+{{history|0.5.2|
+* The assembling machine 2 speed is now slightly faster (from 1.5 to 2).}}
+
+{{history|0.5.0|
+* Update recipe tooltip for assembling machine output.}}
+
+{{history|0.2.1|
+* Better graphics}}
+
+{{history|0.1.0|
+* Introduced}}
+
+== See also ==
+* [[Assembling machine 1]]
+* [[Assembling machine 3]]
+* [[Electric system]]
+* [[Crafting]]
+
+{{ProductionNav}}
+{{C|Producers}}

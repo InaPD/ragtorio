@@ -1,0 +1,10 @@
+{{Infobox
+|prototype-type = recipe
+|internal-name = uranium-processing
+|category = Intermediate products
+|recipe = Time, 12 + Uranium ore, 10 = Uranium-235, 0.007 + Uranium-238, 0.993
+|producers = Centrifuge
+|required-technologies = Uranium processing
+}}<noinclude>
+[[Category:Infobox page]]
+</noinclude>

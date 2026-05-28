@@ -1,0 +1,10 @@
+{{Infobox
+|prototype-type = recipe
+|internal-name = kovarex-enrichment-process
+|category = Intermediate products
+|recipe = Time, 60 + Uranium-235, 40 + Uranium-238, 5 = Uranium-235, 41 + Uranium-238, 2
+|producers = Centrifuge
+|required-technologies = Kovarex enrichment process
+}}<noinclude>
+[[Category:Infobox page]]
+</noinclude>

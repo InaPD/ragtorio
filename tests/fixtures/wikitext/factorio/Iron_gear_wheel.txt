@@ -1,0 +1,35 @@
+{{Languages}}
+{{:Infobox:Iron gear wheel}}
+
+The '''iron gear wheel''' is an intermediate product crafted from two [[iron plate]]s, or cast by a [[foundry]]{{SA}}. It is very important for many basic and advanced recipes, including all levels of [[Belt transport system|belts]], the basic [[inserter]] and [[Assembling machine 1|assembler]], and raw resource extraction equipment such as the [[electric mining drill]].
+
+== Alternative recipes ==
+{{About/Space age}}
+{|class="wikitable"
+|-
+! Process !! Input !! Output !! Made in !! Required technology
+|-
+| {{icon|Casting iron gear wheel||}} Casting iron gear wheel
+| {{icon|time|1}} + {{icon|molten iron|10}}
+| {{icon|iron gear wheel|1}}
+| {{icon|Foundry|space-age=yes}}
+| {{icontech|Foundry (research)|}} [[Foundry (research)]]
+|-
+|}
+
+== History ==
+{{history|2.0.7|
+* {{SA}} Metal casting recipe added for [[Space Age]].
+}}
+
+{{history|0.10.0|
+* Changed stack sizes of items to be 10 based, so it fits the inserter/requester count values.}}
+
+{{history|0.7.1|
+* Stack size increased from 64 to 128}}
+
+{{history|0.1.0|
+* Introduced}}
+
+{{IntermediateNav}}
+{{C|Components}}

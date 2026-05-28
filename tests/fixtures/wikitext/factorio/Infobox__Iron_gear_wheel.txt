@@ -1,0 +1,15 @@
+{{Infobox
+|prototype-type = item
+|internal-name = iron-gear-wheel
+|category = Intermediate products
+|stack-size=100
+|rocket-capacity = 1000 (10 {{Translation|stacks}})
+|recipe = Time, 0.5 + Iron plate, 2
+|producers = Assembling machine + Player
+|consumers = Artillery turret + Artillery wagon + Assembling machine 1 + Assembling machine 2 + Automation science pack + Bulk inserter + Burner inserter + Burner mining drill + Cargo wagon + Centrifuge + Chemical plant + Combat shotgun + Defender capsule + Electric mining drill + Engine unit + Express splitter + Express transport belt + Express underground belt + Fast splitter + Fast transport belt + Fast underground belt + Flamethrower + Flamethrower turret + Fluid wagon + Gun turret + Inserter + Lab + Long-handed inserter + Offshore pump + Oil refinery + Personal roboport + Pumpjack + Radar + Repair pack + Roboport + Rocket launcher + Shotgun + Steam engine + Steam turbine + Submachine gun + Tank + Transport belt
+|changed-by-space-age-mod=yes
+|space-age-consumers = Artillery turret + Artillery wagon + Assembling machine 1 + Assembling machine 2 + Automation science pack + Bulk inserter + Burner inserter + Burner mining drill + Cargo wagon + Centrifuge + Chemical plant + Combat shotgun + Defender capsule + Electric mining drill + Engine unit + Express splitter + Express transport belt + Express underground belt + Fast splitter + Fast transport belt + Fast underground belt + Flamethrower + Flamethrower turret + Fluid wagon + Gun turret + Inserter + Lab + Long-handed inserter + Offshore pump + Oil refinery + Personal roboport + Pumpjack + Radar + Repair pack + Roboport + Rocket launcher + Shotgun + Steam engine + Steam turbine + Submachine gun + Tank + Transport belt + Rocket turret + Recycler
+|space-age-producers = Assembling machine + Player + Foundry + Recycler
+}}<noinclude>
+[[Category:Infobox page]]
+</noinclude>

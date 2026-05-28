@@ -1,0 +1,23 @@
+{{Infobox
+|resistance = {{Translation|Fire}}: 0/70%
+|mining-time = 0.2
+|map-color = 006090
+|prototype-type = assembling-machine
+|internal-name = assembling-machine-2
+|category = Production
+|image = assembling_machine_2_entity_anim.gif
+|health = {{Quality|350|455|560|665|875}}
+|stack-size = 50
+|rocket-capacity = 50 (1 {{Translation|stack}})
+|energy        = 150 kW electric
+|drain         = 5.0 kW electric
+|dimensions    = 3×3
+|crafting-speed = {{Quality|0.75|0.975|1.2|1.425|1.875}}
+|pollution = 3{{Translation|/m}}
+|modules       = 2
+|recipe = Time, 0.5 + Assembling machine 1, 1 + Electronic circuit, 3 + Iron gear wheel, 5 + Steel plate, 2
+|total-raw = Time, 13.5 + Copper plate, 9 + Iron plate, 35 + Steel plate, 2
+|required-technologies = Automation 2
+|producers = Assembling machine + Player
+|consumers = Assembling machine 3
+}}<noinclude>[[Category:Infobox page]]</noinclude>

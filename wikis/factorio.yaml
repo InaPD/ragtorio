@@ -1,0 +1,176 @@
+# Factorio wiki profile.
+#
+# Verified against the live API on 2026-09-13:
+#   - Semantic MediaWiki is installed but holds zero user-defined properties,
+#     so every fact below comes from parsing infobox templates.
+#   - Infoboxes are separate pages in namespace 3002, transcluded as {{:Infobox:X}}.
+#   - Removed content lives in namespace 3004 (Archive:).
+#   - ~20 language subpages per article must be filtered out of mainspace.
+
+wiki:
+  id: factorio
+  api: https://wiki.factorio.com/api.php
+  license: CC BY-NC-SA 3.0
+  attribution: "Factorio Wiki (wiki.factorio.com), Wube Software"
+  rate_limit_rps: 1
+  language_filter:
+    strategy: subpage_suffix
+    keep: en
+  archived:
+    namespace_id: 3004
+    category: Archived
+  extra_namespaces: [3002]
+
+infobox:
+  location: separate_namespace
+  namespace_id: 3002
+  template: Infobox
+  type_field: prototype-type
+  # Completed in Phase 0 from the measured value set on the live wiki; see
+  # docs/coverage/phase0-type-enumeration.md. 96 values over 553 infobox pages.
+  #
+  # Only four values are special. Everything else is [Item]: the :Station label is
+  # added at graph-load time to whatever receives CRAFTED_AT edges, so we never
+  # hand-maintain a list of which machines happen to craft things.
+  type_map:
+    technology: ["Unlock"]
+    item: ["Item"]
+    fluid: ["Item", "Fluid"]
+    ammo: ["Item"]
+    assembling-machine: ["Item"]
+    tool: ["Item"]
+    module: ["Item"]
+    projectile: ["Item"]
+    tile: ["Item"]
+    recipe: ["Recipe"]
+    capsule: ["Item"]
+    inserter: ["Item"]
+    resource: ["Item"]
+    gun: ["Item"]
+    armor: ["Item"]
+    logistic-container: ["Item"]
+    mining-drill: ["Item"]
+    electric-pole: ["Item"]
+    furnace: ["Item"]
+    underground-belt: ["Item"]
+    splitter: ["Item"]
+    transport-belt: ["Item"]
+    car: ["Item"]
+    ammo-turret: ["Item"]
+    lightning-attractor: ["Item"]
+    container: ["Item"]
+    battery-equipment: ["Item"]
+    boiler: ["Item"]
+    lab: ["Item"]
+    cargo-bay: ["Item"]
+    active-defense-equipment: ["Item"]
+    energy-shield-equipment: ["Item"]
+    reactor: ["Item"]
+    electric-turret: ["Item"]
+    roboport-equipment: ["Item"]
+    generator-equipment: ["Item"]
+    generator: ["Item"]
+    arithmetic-combinator: ["Item"]
+    accumulator: ["Item"]
+    artillery-wagon: ["Item"]
+    artillery-turret: ["Item"]
+    agricultural-tower: ["Item"]
+    asteroid-collector: ["Item"]
+    beacon: ["Item"]
+    blueprint: ["Item"]
+    blueprint-book: ["Item"]
+    cargo-wagon: ["Item"]
+    belt-immunity-equipment: ["Item"]
+    cargo-landing-pad: ["Item"]
+    cargo-pod: ["Item"]
+    deconstruction-item: ["Item"]
+    decider-combinator: ["Item"]
+    constant-combinator: ["Item"]
+    construction-robot: ["Item"]
+    display-panel: ["Item"]
+    movement-bonus-equipment: ["Item"]
+    gate: ["Item"]
+    fluid-wagon: ["Item"]
+    fluid-turret: ["Item"]
+    heat-pipe: ["Item"]
+    fusion-reactor: ["Item"]
+    fusion-generator: ["Item"]
+    land-mine: ["Item"]
+    lamp: ["Item"]
+    offshore-pump: ["Item"]
+    locomotive: ["Item"]
+    night-vision-equipment: ["Item"]
+    logistic-robot: ["Item"]
+    pipe: ["Item"]
+    pipe-to-ground: ["Item"]
+    power-switch: ["Item"]
+    solar-panel-equipment: ["Item"]
+    character: ["Station"]
+    roboport: ["Item"]
+    rail-signal: ["Item"]
+    repair-tool: ["Item"]
+    radar: ["Item"]
+    rail-chain-signal: ["Item"]
+    pump: ["Item"]
+    rail-planner: ["Item"]
+    programmable-speaker: ["Item"]
+    rail-ramp: ["Item"]
+    rail-support: ["Item"]
+    solar-panel: ["Item"]
+    rocket-silo: ["Item"]
+    spider-vehicle: ["Item"]
+    spidertron-remote: ["Item"]
+    selector-combinator: ["Item"]
+    space-platform-starter-pack: ["Item"]
+    space-platform-hub: ["Item"]
+    train-stop: ["Item"]
+    storage-tank: ["Item"]
+    thruster: ["Item"]
+    inventory-bonus-equipment: ["Item"]
+    wall: ["Item"]
+    upgrade-item: ["Item"]
+
+  # 37 infobox pages carry no prototype-type (archived technologies and items,
+  # plus world entities). These rules classify the ones that hold real recipe or
+  # technology data. First match wins.
+  type_rules:
+    - when_present: [allows]
+      emit: [Unlock]
+    - when_present: [cost]
+      emit: [Unlock]
+    - when_present: [recipe]
+      emit: [Item]
+
+  # Field semantics verified against all 590 infobox pages in Phase 0.
+  fields:
+    internal-name: { to: prop.internal_name }
+    stack-size: { to: prop.stack_size, type: int }
+
+    # "Time, 0.5 + Iron plate, 2" or, when the output is not the page's own
+    # entity, "Time, 60 + Uranium-235, 40 = Uranium-235, 41 + Uranium-238, 2".
+    # 72 of 284 recipe fields carry that explicit output side; amounts may be
+    # fractional, in which case they are probabilities.
+    recipe: { to: recipe, parser: factorio_recipe_expr }
+
+    producers: { to: rel.CRAFTED_AT, parser: plus_list }
+    consumers: { to: rel.CONSUMED_BY, parser: plus_list }
+
+    # Technology fields. "effects" is what the research makes available
+    # (167/228 techs); "cost" is the science packs it consumes (197/228);
+    # "required-technologies" (226/228) mixes prerequisite technologies with
+    # science-pack items, so Phase 3 keeps only the edges that resolve to an
+    # Unlock. "allows" is deliberately unmapped: it lists follow-on technologies
+    # and is the exact inverse of their own required-technologies, so mapping it
+    # would double every prerequisite edge.
+    effects: { to: rel.UNLOCKS, parser: plus_list }
+    cost: { to: rel.COSTS, parser: factorio_recipe_expr }
+    required-technologies: { to: rel.REQUIRES, parser: plus_list }
+
+inline_templates:
+  history:
+    to: version_event
+    args: [version, text]
+
+ground_truth:
+  kind: factorio_data_raw
+  path: data/ground_truth/factorio/data-raw-dump.json

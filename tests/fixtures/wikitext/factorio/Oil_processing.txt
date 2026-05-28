@@ -1,0 +1,233 @@
+{{Languages}}
+'''Oil processing''' is a large part of Factorio. Oil processing may refer to [[Oil processing (research)|the researched technology]], the recipe used in the [[oil refinery]], or the overall workings of oil.
+
+== Overview ==
+There are various recipes that can be used to process [[crude oil]] into its fractions. Its fraction ([[heavy oil]], [[light oil]] and [[petroleum gas]]) can also be cracked into each other. Their recipes and technology requirements can be seen below.
+
+{|class="wikitable"
+|-
+! Process !! Input !! Output !! Made in !! Required technology !! Internal name
+|-
+| {{Icon|Basic oil processing||}} Basic oil processing || {{icon|time|5}} + {{Icon|Crude oil|100}} || {{Icon|Petroleum gas|45}} || {{Icon|Oil refinery}} || {{icontech|Oil processing (research)|}} [[Oil processing (research)|Oil processing]] || basic-oil-processing
+|-
+| {{Icon|Advanced oil processing||}} Advanced oil processing || {{icon|time|5}} + {{Icon|Crude oil|100}} + {{icon|water|50}} || {{Icon|Heavy oil|25}} + {{Icon|Light oil|45}} + {{Icon|Petroleum gas|55}} || {{Icon|Oil refinery}} || {{icontech|Advanced oil processing (research)|}} [[Advanced oil processing (research)|Advanced oil processing]] || advanced-oil-processing
+|-
+| {{Icon|Heavy oil cracking||}} Heavy oil cracking || {{icon|time|2}} + {{Icon|Heavy oil|40}} + {{icon|water|30}} || {{Icon|Light oil|30}} || {{Icon|Chemical plant}}{{Icon|Biochamber||space-age=yes}} || {{icontech|Advanced oil processing (research)|}} [[Advanced oil processing (research)|Advanced oil processing]] || heavy-oil-cracking
+|-
+| {{Icon|Light oil cracking||}} Light oil cracking || {{icon|time|2}} + {{Icon|Light oil|30}} + {{icon|water|30}} || {{Icon|Petroleum gas|20}} || {{Icon|Chemical plant}}{{Icon|Biochamber||space-age=yes}} || {{icontech|Advanced oil processing (research)|}} [[Advanced oil processing (research)|Advanced oil processing]] || light-oil-cracking
+|-
+| {{Icon|Simple coal liquefaction||space-age=yes}} Simple coal liquefaction || {{icon|time|5}} + {{icon|coal|10}} + {{icon|Calcite|2|space-age=yes}} + {{icon|Sulfuric acid|25}} || {{Icon|Heavy oil|50}} || {{Icon|Oil refinery}} || {{icontech|calcite processing (research)}} [[Calcite processing (research)|Calcite processing]] || simple-coal-liquefaction
+|-
+|| {{Icon|Coal liquefaction||}} Coal liquefaction || {{icon|time|5}} + {{icon|coal|10}} + {{Icon|Heavy oil|25}} + {{icon|steam|50}} || {{Icon|Heavy oil|90}} + {{Icon|Light oil|20}} + {{Icon|Petroleum gas|10}} || {{Icon|Oil refinery}} || {{icontech|coal liquefaction|}} [[Coal liquefaction (research)|Coal liquefaction]] || coal-liquefaction
+|}
+
+== Setting up oil processing ==
+[[Pumpjack]]s need to be placed on top of the middle of the oil well, which is highlighted with a green box when the pumpjack is held. Pumpjacks produce a certain amount of [[Crude oil]] per second, shown on the right, at the bottom of the information panel.
+
+Crude oil must be refined in an [[oil refinery]]. The oil refinery needs to have a recipe set (see above for available recipes). Once it is set and "alt-mode" is active, the input and output locations and the expected fluids are shown. The locations of these cannot be changed, only the entire machine can be rotated or flipped ({{key|v}} or {{key|h}} key by default).
+
+Advanced oil processing and coal liquefaction produce multiple fluids: [[heavy oil]], [[light oil]] and [[petroleum gas]]. The refinery will stop production of all products if one product output is full, so it should be ensured that the products are transported out of the refinery; any products that cannot be used should be (temporarily) stored in a [[storage tank]]. Furthermore, both heavy oil and light oil can be cracked to the next lower type in a [[chemical plant]] (recipe above). This is useful if the player has an abundance of one product, but is lacking another (a common problem).
+
+=== Tips ===
+* The [[circuit network]] can be used to easily control how much fluid gets used for each recipe, to ensure that the player always has enough. For examples on how to do this, see the [[Tutorial:Circuit network cookbook#Oil_Setups|circuit-network cookbook]].
+* [[Solid fuel]] is most efficient when created from light oil. If the player has too much heavy oil, cracking it to light oil then making it into fuel is more efficient than making heavy oil into fuel directly.
+
+=== Coal Liquefaction ===
+Once coal liquefaction is researched, the player can manufacture oil products anywhere without a need for crude oil: the player can set up an oil refinery to utilize coal liquefaction and use an [[assembling machine]] and [[barrel]]s to manually insert a small amount of heavy oil into the system to initiate production. As long as the heavy oil output is routed back into the refinery before being sent anywhere else, the refinery will be self-sustaining in terms of heavy oil, only requiring steam and coal to run. To prevent fluid back-up, the player will need to ensure all output fluids are being consumed or stored somehow.
+
+While a single refinery using this set-up this will not produce a large amount of oil products overall, the fact it does not require crude oil to run means it can be placed anywhere the player needs a small, steady supply of oil products, saving the need to transport oil over large distances by pipes or trains. Such uses include:
+
+* A refueling outpost that produces [[solid fuel]] and/or [[rocket fuel]].
+* With a supply of [[iron ore]], this set-up can produce [[sulfuric acid]], allowing the mining of [[uranium ore]].
+* A supply of iron ore also allows the manufacture of ammunition: [[cluster grenade]]s, [[land mine]]s, and [[cannon shell]]s. 
+* With a supply of both iron ore and [[copper ore]], [[rocket]]s and [[artillery shell]]s can be manufactured, as well as all [[capsules]].
+
+More broadly, a sufficiently large network of refineries utilizing coal liquefaction could produce enough oil products to run the player's factory without a need for crude oil anymore, allowing much more flexibility in the layout and placement of facilities that require oil products to function. The downside of relying entirely on coal liquefaction are an overall slightly lower output of oil products compared to advanced oil processing, a need for more chemical plants to crack the large amounts of heavy oil produced, and the system will shut down entirely if its supply of coal or steam runs out.
+
+=== Simple coal liquefaction {{SA}} ===
+[[Space Age]] introduces a second liquefaction recipe: simple coal liquefaction. This process uses coal, [[calcite]]{{SA}}, and [[sulfuric acid]], generating only [[heavy oil]]. Through cracking, it can be used to make other oil products. On [[Vulcanus]]{{SA}}, it is useful when starting out as the standard coal liquefaction recipe must be researched. It can also be used to bootstrap standard liquefaction, providing the initial heavy oil.
+
+Outside of its initial uses on Vulcanus, it does have two potential advantages. [[Steam]] is much harder to get on [[Space platform]]s{{SA}} than sulfuric acid or calcite. The only way to make steam on a platform is with a [[nuclear reactor]], which requires fuel from [[Nauvis]]. By contrast, sulfuric acid, coal, and calcite can all be manufactured or mined from asteroids.
+
+The other advantage is that the recipe produces heavy oil without any of the other oil processing byproducts. This allows the player to use this purely as a way to generate [[lubricant]] for those recipes which need it. Other oil processing setups can then always crack heavy oil to light oil.
+
+Note also that going to Vulcanus is not ''strictly'' required. [[Calcite processing (research)]] does not require ''mining'' calcite from a calcite ore patch; you merely need to acquire calcite. This can be done using [[Advanced asteroid processing (research)]] that is made available on [[Gleba]]. One still must research [[Planet discovery Vulcanus (research)]], but once done, acquiring calcite via [[advanced oxide asteroid crushing]] is enough to trigger the calcite processing technology.
+
+=== Transporting fluids ===
+There are many ways to move fluids in Factorio, they are listed below:
+
+* [[Pipe]]s
+* [[Fluid wagon]]s
+* Loading the fluids into [[barrel]]s and transporting them by [[railway]], [[transport belts]], or the [[logistic network]]
+
+== Optimal ratios ==
+The optimal ratio is the ratio of production that ensures no waste of time or materials.
+
+=== Petroleum gas production ===
+
+For producing petroleum gas, the optimal advanced oil processing ratio is 20:5:17 (advanced oil processing : heavy oil cracking : light oil cracking), and 8:2:7 is close enough. Using coal liquefaction, the ratio is 60:39:55 (coal liquefaction : heavy oil cracking : light oil cracking), and 12:8:11 is close enough.
+
+One refinery running basic oil processing produces 9 petroleum gas per second. One refinery running advanced oil processing combined with one of each oil cracking chemical plant produces 19.5 petroleum gas per second in total. One refinery running coal liquefaction combined with one of each oil cracking chemical plant produces close to 11.2 petroleum gas per second in total (taking into consideration the recycling of the heavy oil).
+
+The refining can be sped up with [[module]]s; to prevent jams or inactive buildings it is recommended to speed everything up evenly. When slowing the process down (by using [[productivity module]]s) you are better off experimenting on altering the ratio or the speed on certain buildings, since the default ratios given above only hold if all the structures involved run at the same speed and have 100% productivity (in other words, no bonuses).
+
+{| class="wikitable mw-collapsible mw-collapsed" style="text-align: center;"
+!colspan="5" |Petroleum production output with modules
+|-
+!colspan="1" style="width: 230px; text-align: left;" |Module configuration
+!colspan="1" style="width: 75px;" |None
+!colspan="1" style="width: 75px;" |Config 1 (*)
+!colspan="1" style="width: 75px;" |Config 2
+!colspan="1" |Units 
+|-
+!colspan="5"|Oil refinery
+|-
+! style="text-align: left;" | Crude oil consumption
+| 100 || 100 || 100 || 
+|-
+! style="text-align: left;" | Water consumption
+| 50 || 50 || 50 || 
+|-
+! style="text-align: left;" | Crafting speed
+| 5 || 5 || 5 || s / final item
+|-
+! style="text-align: left;" | Heavy oil output
+| 25 || 25 || 25 || 
+|-
+! style="text-align: left;" | Light oil output
+| 45 || 45 || 45 || 
+|-
+! style="text-align: left;" | Petroleum output
+| 55 || 55 || 55 || 
+|-
+! style="text-align: left;" | Base machine crafting speed
+| 1 || 1 || 1 || crafts / s
+|-
+! style="text-align: left;" | Crafting speed multiplier
+| 100% || 455% || 855% || 
+|-
+! style="text-align: left;" | Output multiplier
+| 100% || 130% || 130% || final items
+|-
+! style="text-align: left;" | Total Crude oil consumption
+| 20 || 91 || 171 || per second
+|-
+! style="text-align: left;" | Total Water consumption
+| 10 || 45.5 || 85.5 || per second
+|-
+! style="text-align: left;" | Total Heavy oil output
+| 5 || 29.575 || 55.575 || per second
+|-
+! style="text-align: left;" | Total Light oil output
+| 9 || 53.235 || 100.035 || per second
+|-
+! style="text-align: left;" | Total Petroleum output
+| 11 || 65.065 || 122.265 || per second
+|-
+!colspan="5"|Heavy oil cracking
+|-
+! style="text-align: left;" | Heavy oil consumption
+| 40 || 40 || 40 || 
+|-
+! style="text-align: left;" | Water consumption
+| 30 || 30 || 30 || 
+|-
+! style="text-align: left;" | Crafting speed
+| 2 || 2 || 2 || s / final item
+|-
+! style="text-align: left;" | Light oil output
+| 30 || 30 || 30 || 
+|-
+! style="text-align: left;" | Base machine crafting speed
+| 1 || 1 || 1 || crafts / s
+|-
+! style="text-align: left;" | Crafting speed multiplier
+| 100% || 455% || 655% || 
+|-
+! style="text-align: left;" | Output multiplier
+| 100% || 130% || 130% || final items
+|-
+! style="text-align: left;" | Total Heavy oil consumption
+| 20 || 91 || 131 || per second
+|-
+! style="text-align: left;" | Total Water consumption
+| 15 || 68.25 || 98.25 || per second
+|-
+! style="text-align: left;" | Total Light oil output
+| 15 || 88.725 || 127.725 || per second
+|-
+!colspan="5"|Light oil cracking
+|-
+! style="text-align: left;" | Light oil consumption
+| 30 || 30 || 30 || 
+|-
+! style="text-align: left;" | Water consumption
+| 30 || 30 || 30 || 
+|-
+! style="text-align: left;" | Crafting speed
+| 2 || 2 || 2 || s / final item
+|-
+! style="text-align: left;" | Petroleum output
+| 20 || 20 || 20 || 
+|-
+! style="text-align: left;" | Base machine crafting speed
+| 1 || 1 || 1 || crafts / s
+|-
+! style="text-align: left;" | Crafting speed multiplier
+| 100% || 455% || 655% || 
+|-
+! style="text-align: left;" | Output multiplier
+| 100% || 130% || 130% || final items
+|-
+! style="text-align: left;" | Total Light oil consumption
+| 15 || 68.25 || 98.25 || per second
+|-
+! style="text-align: left;" | Total Water consumption
+| 15 || 68.25 || 98.25 || per second
+|-
+! style="text-align: left;" | Total Petroleum output
+| 10 || 59.15 || 85.15 || per second
+|-
+!colspan="5"|Ratio
+|-
+! style="text-align: left;" | Heavy oil cracking
+| 0.25 || 0.325 || 0.424 || 
+|-
+! style="text-align: left;" | Light oil cracking
+| 0.85 || 1.2025 || 1.57 || 
+|-
+! style="text-align: left;" | Petroleum gas output
+| 19.5 || 136.193 || 255.923 || per second
+|-
+|colspan="5" style="width: 600px; text-align: left;" | '''* Notes to table:''' ''Config 1'' is 3 Productivity modules 3 in each production building and 8 Beacons with 2 Speed modules 3 each in range of each production building. ''Config 2'' is 3 Productivity modules 3 in each production building and the highest achievable number of Beacons (16 for Refinery, 12 for Chemical plant) with 2 Speed modules 3 each in range of each prod. building.
+|}
+
+For config 2 in the above (possibly collapsed) table, a good enough ratio is 7:3:11, and the next ratio that is better is 165:70:259. The optimal ratio involves over 50000 refineries, and so is practically useless. But, for reference, it's 52400:22230:82251.
+
+== History ==
+{{history|0.17.60|
+* Basic oil processing produces only petroleum gas.}}
+
+{{history|0.17.0|
+* Coal liquefaction now produces 90 heavy oil, 20 light oil and 10 petroleum gas, consuming 25 heavy oil, 10 coal and 50 steam.}}
+
+{{history|0.15.10|
+* Coal liquefaction now takes steam instead of water.}}
+
+{{history|0.15.0|
+* Added coal liquefaction oil processing recipe.}}
+
+{{history|0.9.1|
+* Added heavy oil cracking and light oil cracking.}}
+
+{{history|0.9.0|
+* Introduced
+**Basic oil processing
+**Advanced oil processing}}
+
+== See also ==
+* [[Fluid system]]
+* [[Crude oil]]
+* [[Barrel]]
+
+{{C|Main}}

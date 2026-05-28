@@ -1,0 +1,12 @@
+{{Languages}}
+{{:Infobox:Automation (research)}}
+
+'''Automation''' is one of the first technologies that the player will research. It allows the building of the [[Long-handed inserter]], as well as the [[Assembling machine 1]], which is the start of automated crafting, an essential part of Factorio.
+
+The cost of this research is not affected by the technology price multiplier set during [[Map_generator#Advanced|map creation]].
+
+== See also ==
+* [[Research]]
+* [[Technologies]]
+
+{{TechNav}}

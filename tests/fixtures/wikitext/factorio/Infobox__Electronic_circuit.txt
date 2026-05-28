@@ -1,0 +1,19 @@
+{{Infobox
+|required-technologies = Electronics
+|prototype-type = item
+|internal-name = electronic-circuit
+|category = Intermediate products
+|stack-size=200
+|rocket-capacity=2000 (10 {{Translation|stacks}})
+|recipe = Time, 0.5 + Copper cable, 3 + Iron plate, 1
+|total-raw = Time, 1.25 + Copper plate, 1.5 + Iron plate, 1
+|producers = Assembling machine + Player
+|consumers = Active provider chest + Advanced circuit + Arithmetic combinator + Assembling machine 1 + Assembling machine 2 + Beacon + Buffer chest + Bulk inserter + Chemical plant + Constant combinator + Construction robot + Decider combinator + Defender capsule + Display panel + Efficiency module + Electric engine unit + Electric mining drill + Fast inserter + Fast splitter + Flying robot frame + Gate + Inserter + Lab + Laser turret + Locomotive + Oil refinery + Passive provider chest + Poison capsule + Power switch + Processing unit + Productivity module + Programmable speaker + Pumpjack + Radar + Rail chain signal + Rail signal + Repair pack + Requester chest + Rocket launcher + Slowdown capsule + Lamp + Solar panel + Speed module + Splitter + Storage chest + Train stop
+
+|changed-by-space-age-mod=yes
+|space-age-producers = Assembling machine + Electromagnetic plant + Player 
+|space-age-consumers = Active provider chest + Advanced circuit + Agricultural tower + Arithmetic combinator + Assembling machine 1 + Assembling machine 2 + Beacon + Biochamber + Buffer chest + Bulk inserter + Chemical plant + Constant combinator + Construction robot + Decider combinator + Defender capsule + Display panel + Efficiency module + Electric engine unit + Electric mining drill + Fast inserter + Fast splitter + Foundry + Flying robot frame + Gate + Inserter + Lab + Laser turret + Locomotive + Oil refinery + Passive provider chest + Poison capsule + Power switch + Processing unit + Productivity module + Programmable speaker + Pumpjack + Quality module + Radar + Rail chain signal + Rail signal + Repair pack + Requester chest + Rocket launcher + Slowdown capsule + Lamp + Solar panel + Speed module + Splitter + Storage chest + Supercapacitor + Train stop
+
+}}<noinclude>
+[[Category:Infobox page]]
+</noinclude>

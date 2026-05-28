@@ -1,0 +1,12 @@
+{{Infobox
+|category = Production
+|stack-size=20
+|damage = 5 {{Translation|physical}}
+|shooting-speed = 2 /s (melee)
+|durability = 4000
+|recipe = Time, 0.5 + Iron plate, 3 + Iron stick, 2 = Archive:Iron axe
+|total-raw = Time, 1 + Iron plate, 4
+|producers=manual + assembling machine
+}}<noinclude>
+[[Category:Infobox page]]
+</noinclude>

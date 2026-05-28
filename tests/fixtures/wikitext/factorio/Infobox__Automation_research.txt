@@ -1,0 +1,11 @@
+{{infobox
+|required-technologies = Automation science pack
+|prototype-type = technology
+|internal-name = automation
+| category = Technology
+|cost = Time, 10 + Automation science pack, 1
+| cost-multiplier = 10
+|allows = Automation 2, 2
+|effects = Assembling machine 1 + Long-handed inserter
+| extra1         = Key technology for large scale production.
+}}<noinclude>[[Category:Infobox page]]</noinclude>

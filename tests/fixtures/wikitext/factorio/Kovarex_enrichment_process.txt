@@ -1,0 +1,39 @@
+{{Languages}}
+{{:Infobox:Kovarex enrichment process}}
+
+'''Kovarex enrichment process''' is a crafting recipe to reprocess [[uranium-238]] and [[uranium-235]] in a [[centrifuge]]. It converts uranium-238 to uranium-235 at a 3:1 ratio.
+
+== Purpose ==
+The kovarex enrichment process is useful because [[Uranium processing|uranium (ore) processing]] is probability-based and players cannot directly alter the probabilities. 10 uranium ore is processed into either 1 uranium-235 with a probability of 0.007 (0.7% chance) or 1 uranium-238 with a probability of 0.993 (99.3% chance), leading to an [[:Wikipedia:Binomial_distribution|expected]] output of 1 uranium-235 per ~143 crafting cycles, or about a 1:142 ratio of uranium-235 to uranium-238.
+
+Uranium-235 is used to produce [[uranium fuel cell]]s, [[nuclear fuel]], and [[atomic bomb]]s, but the probability distribution of uranium processing can lead to slow production of uranium-235 and a large surplus of uranium-238. Kovarex enrichment process enables faster, deterministic production of uranium-235 from surplus uranium-238.
+
+Note that converting ''all'' uranium-238 into uranium-235 is inadvisable, since uranium-238 is an ingredient of uranium fuel cells, [[uranium rounds magazine]]s, [[uranium cannon shell]]s, and [[explosive uranium cannon shell]]s.
+
+== Catalyst ==
+Kovarex enrichment process is a [[Productivity#Catalysts|catalytic recipe]], producing and consuming the same items. The net effect of each crafting cycle consumes 3 uranium-238 and produces 1 uranium-235. The remaining 40 uranium-235 and 2 uranium-238 are treated as catalysts for the net production.
+
+[[Productivity]] bonuses only apply to the net production, not the catalysts. When productivity generates extra output, it generates 1 uranium-235 and 0 uranium-238 — not 41 and 2.
+
+== Trivia ==
+* The Kovarex enrichment process is named after [https://www.factorio.com/game/about Michal Kovařík], lead designer of Factorio and co-owner of Wube, whose online nickname is ''kovarex'' (which he usually spells lowercase). [https://www.reddit.com/r/factorio/comments/67bj3p/015_kovarex_uranium_enrichment_is_too_good_with/dgq2ij3/?context=1]
+* With a 60 second crafting time, kovarex enrichment process is one of the slowest recipes in the game. {{SA}} Even when fully beaconed with all legendary entities and modules, the centrifuge's [[Inserters#Insertion_limits|automatic insertion limit]] will stay at 2 crafts: 80 uranium-235 and 10 uranium-238
+* In the real world, [[:Wikipedia:Uranium-235|uranium-235]] is the most common fissile isotope of uranium and makes up approximately 0.72% of naturally-occurring uranium, with the other 99.28% being [[:Wikipedia:Uranium-238|uranium-238]]. The in-game representation is thus highly accurate in this regard. Uranium is commonly [[:Wikipedia:Enriched_uranium|enriched]] in centrifuges by merely separating isotopes to increase the percentage of <sup>235</sup>U for use in fission reactions. As the Kovarex enrichment process produces more fissile material than its input, the process is more akin to [[:Wikipedia:breeder reactor|plutonium breeding]]. [https://www.reddit.com/r/factorio/comments/187kupm/kovarex_enrichment_is_plutonium_breeding_right/ Reddit discussion: Kovarex enrichment is plutonium breeding… right? ]
+* Uranium munitions are made from [[:Wikipedia:depleted uranium|depleted uranium]], a byproduct of uranium enrichment, which is mostly <sup>238</sup>U whose natural admixture of the <sup>235</sup>U isotope has been lowered even further through the enrichment process. Depleted uranium is minimally radioactive and the reason for its use in munitions is its very high density and other mechanical properties, not radioactivity/toxicity.
+
+== History ==
+{{History|0.17.0|
+* Can be used with productivity modules once again.
+* Use with productivity modules now gives correct amount of bonus items.}}
+
+{{History|0.15.2|
+* No longer usable with productivity modules.}}
+
+{{History|0.15.0|
+* Introduced}}
+
+== See also ==
+* [[Uranium processing]]
+
+{{IntermediateNav}}
+{{C|Components}}

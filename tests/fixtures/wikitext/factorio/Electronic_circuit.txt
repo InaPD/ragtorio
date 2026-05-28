@@ -1,0 +1,16 @@
+{{Languages}}{{:Infobox:Electronic circuit}}
+The '''electronic circuit''' (or "green circuit") is a basic intermediate product, widely used throughout the game. The electronic circuit is the first in a line of circuit-type intermediate products.
+
+Electronic circuits are used as an ingredient for many item recipes, including creation of all kinds of [[inserters]], and most production machines such as [[assembling machine|assemblers]], [[solar panel]]s and [[electric mining drill]]s. Certain other logistic devices will also need electronic circuits to be created, such as rail signalling equipment. The [[logistic network]] is also incredibly dependent on products constructed with these circuits.
+
+Electronic circuits need to be made in order to produce the upgraded variants of circuit such as the [[advanced circuit]]s and [[processing unit]]s. Combined together, these circuits can also make [[module]]s.
+
+The ratio of assembling machines of the same tier to craft this item is 3 [[copper cable]] assembling machines to 2 '''electronic circuit''' assembling machines.
+
+== Achievements ==
+{{Achievement|mass-production-1}}
+{{Achievement|mass-production-2}}
+{{Achievement|mass-production-3}}
+
+{{IntermediateNav}}
+{{C|Components}}

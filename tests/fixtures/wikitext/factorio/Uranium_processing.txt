@@ -1,0 +1,52 @@
+{{Languages}}{{:Infobox:Uranium processing}}
+
+'''Uranium processing''' is the only way to use [[uranium ore]] and the first source of [[uranium-235]] and [[uranium-238]] that is available to the [[player]]. The process has a 99.3% chance to produce 1 uranium-238 and a 0.7% chance to produce 1 uranium-235. 
+
+== Initiating the [[Kovarex enrichment process]] ==
+Unlike most other crafting processes, uranium processing creates uranium-235 and uranium-238 based on probability, rather than in guaranteed deterministic amounts. Additionally, the Kovarex process requires a bulk stockpile of 40 units of the rare uranium-235 isotope to initiate in a single centrifuge. Therefore, planning uranium mining and processing for the Kovarex process takes certain considerations not encountered elsewhere in the game.
+
+=== Expected value ===
+As uranium-235 is created in centrifuges running uranium processing with ''p = 0.007'', the expected number of processing cycles to gain a single unit is ''E(1,p) = 1 ÷ p = ~143''. The expected number of cycles to gain 40 units is then ''E(40,p) = 40 × E(1,p)'' = '''~5,714 cycles'''. Note that running this many cycles requires mining 57,140 uranium ore, a non-trivial task.
+
+However, given the nature of probability, it is impossible to guarantee that 40 units will be reached in this number of cycles; as a matter of fact, some mathematics yields that the probability that 5,714 cycles will produce ''at least'' 40 units of uranium-235 is only about 52%.
+
+As each cycle takes 12 seconds, it takes on average 12 * 143 = 1716 seconds to produce 1 uranium-235 (assuming no productivity or speed modules). This can be turned into 10 [[uranium fuel cell]]s, each of which lasts 200 seconds, so in total 2000 seconds. That means one centrifuge constantly running can on average supply enough uranium-235 to produce enough fuel cells to continuously power one reactor. See [[Tutorial:Nuclear_power#Nuclear_reactor|Tutorial:Nuclear_power]]. The Kovarex enrichment process is a much more efficient way to produce uranium-235. 
+
+=== Confidence levels ===
+[[File:Kovarex-prob-chart.png|300px|thumb|right|Probability of reaching 40 uranium-235 from uranium processing by number of cycles (click to enlarge)]]
+
+Some further mathematics enables one to calculate the number of uranium processing cycles one must run to obtain ''at least'' 40 units of uranium-235 (given ''p = 0.007'') with a given level of confidence (probability of achieving the set goal).
+
+As discussed in the previous section, the level of confidence corresponding to 5,714 cycles (for which the ''expected value'' of uranium-235 gained is 40) happens to be about 52% (or, in other words, with this number of cycles, one can expect to fail to reach 40 uranium-235 a bit less than once out of every 2 tries).
+
+Some further example confidence levels that may be of interest to players are given in the table below. Consult the chart to the right for custom values.
+
+{| class="wikitable" style="text-align: center;"
+!style="width: 120px;" |Confidence level
+!style="width: 100px;" |Failures
+!Cycles required
+|-
+| 10% || 9 out of 10 || 4,595
+|-
+| 50% || 1 out of 2 || 5,667
+|-
+| 90% || 1 out of 10 || 6,894
+|-
+| 95% || 1 out of 20 || 7,272
+|-
+| 99% || 1 out of 100 || 8,015
+|-
+|}
+
+== Trivia ==
+* Uranium processing is the only probability-based crafting recipe in the base game, while {{SA}} Space Age adds several more probability-based recipes.
+
+== History ==
+{{History|0.15.0|
+* Introduced}}
+
+== See also ==
+* [[Kovarex enrichment process]]
+
+{{IntermediateNav}}
+{{C|Materials}}

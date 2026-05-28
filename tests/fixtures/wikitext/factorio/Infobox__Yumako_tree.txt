@@ -1,0 +1,13 @@
+{{Infobox
+| map-color = ffffff
+| category = Resources
+| extra1 = Can be chopped down for [[Yumako]].
+| image = yumako_tree_entity
+| expected-resources = {{Icon|Yumako|50}}
+| health = 50
+| pollution = 15 {{Translation|per harvest}} <!-- No idea why "spores" won't work here -->
+| growth-time = 300s
+| mining-time = 
+| space-age = yes
+}}
+<noinclude>[[Category:Infobox page]]</noinclude>
