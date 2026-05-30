@@ -116,3 +116,9 @@ class TestRedact:
 
     def test_non_url_dsn_is_unchanged(self) -> None:
         assert _redact("dbname=ragtorio") == "dbname=ragtorio"
+
+
+def test_extract_with_an_unknown_profile_exits_cleanly() -> None:
+    result = runner.invoke(app, ["extract", "nosuchwiki", "--dry-run"])
+    assert result.exit_code == 1
+    assert "no profile at" in result.output

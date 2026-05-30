@@ -57,3 +57,25 @@ CREATE TABLE IF NOT EXISTS raw_category (
 );
 
 CREATE INDEX IF NOT EXISTS raw_category_name_idx ON raw_category (wiki, category);
+
+-- Phase 2: the extractor's output. A run replaces every fact for the wiki, since
+-- everything here is recomputable from raw_page without refetching. `object` and
+-- `props` are jsonb so a fact's value keeps its real type (string, number, or null)
+-- rather than everything collapsing to text.
+CREATE TABLE IF NOT EXISTS fact (
+    fact_id             bigserial PRIMARY KEY,
+    wiki                text        NOT NULL,
+    subject             text        NOT NULL,
+    subject_labels      text[]      NOT NULL,
+    predicate           text        NOT NULL,
+    object              jsonb,
+    object_labels       text[]      NOT NULL DEFAULT '{}',
+    props               jsonb       NOT NULL DEFAULT '{}',
+    source_page_id      bigint      NOT NULL,
+    source_revision_id  bigint      NOT NULL,
+    source_field        text        NOT NULL,
+    extracted_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS fact_wiki_subject_idx ON fact (wiki, subject);
+CREATE INDEX IF NOT EXISTS fact_wiki_predicate_idx ON fact (wiki, predicate);

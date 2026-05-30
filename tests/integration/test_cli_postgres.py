@@ -18,10 +18,12 @@ from typer.testing import CliRunner
 from ragtorio.cli import app
 from ragtorio.db.connect import apply_schema, connect
 from ragtorio.harvest.client import MediaWikiClient
+from ragtorio.harvest.models import RawPage
+from ragtorio.harvest.postgres import PostgresHarvestStore
 
 DSN = os.environ.get("RAGTORIO_TEST_DSN", "postgresql://ragtorio:ragtorio@localhost:5433/ragtorio")
 FACTORIO_API = "https://wiki.factorio.com/api.php"
-TABLES = ("raw_category", "raw_redirect", "raw_page", "crawl_run")
+TABLES = ("fact", "raw_category", "raw_redirect", "raw_page", "crawl_run")
 
 type Conn = psycopg.Connection[tuple[object, ...]]
 
@@ -104,3 +106,41 @@ def test_second_harvest_fetches_nothing(
         assert cur.fetchall() == [(1, 0), (0, 1)]
         cur.execute("SELECT count(*) FROM raw_page")
         assert cur.fetchone() == (1,)
+
+
+def _seed_factorio_pages(conn: Conn, pages: list[RawPage]) -> None:
+    PostgresHarvestStore(conn).save_pages(pages)
+
+
+def test_extract_dry_run_writes_nothing_then_a_real_run_writes_facts(
+    conn: Conn, factorio_pages: list[RawPage]
+) -> None:
+    _seed_factorio_pages(conn, factorio_pages)
+
+    dry = runner.invoke(app, ["extract", "factorio", "--dry-run", "--dsn", DSN])
+    assert dry.exit_code == 0, dry.output
+    assert "dry run" in dry.output
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM fact")
+        assert cur.fetchone() == (0,)
+
+    result = runner.invoke(app, ["extract", "factorio", "--dsn", DSN])
+    assert result.exit_code == 0, result.output
+    assert "coverage" in result.output
+    assert "wrote 168 facts" in result.output
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM fact WHERE wiki = 'factorio'")
+        assert cur.fetchone() == (168,)
+
+
+def test_extract_replaces_facts_on_a_second_run(conn: Conn, factorio_pages: list[RawPage]) -> None:
+    """Facts are recomputable, so a second run must not accumulate duplicates."""
+    _seed_factorio_pages(conn, factorio_pages)
+
+    runner.invoke(app, ["extract", "factorio", "--dsn", DSN])
+    second = runner.invoke(app, ["extract", "factorio", "--dsn", DSN])
+
+    assert second.exit_code == 0, second.output
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM fact WHERE wiki = 'factorio'")
+        assert cur.fetchone() == (168,)

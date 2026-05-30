@@ -1,7 +1,7 @@
 """Command-line entry point.
 
-Phase 0 shipped ``probe`` and ``profile``; Phase 1 adds ``init-db`` and ``harvest``.
-Later phases add extract, graph, index, ask and bench.
+Phase 0 shipped ``probe`` and ``profile``; Phase 1 added ``init-db`` and ``harvest``;
+Phase 2 adds ``extract``. Later phases add graph, index, ask and bench.
 """
 
 from __future__ import annotations
@@ -12,6 +12,11 @@ from rich.table import Table
 
 from ragtorio.config import Settings, WikiProfile, load_profile
 from ragtorio.db.connect import apply_schema, connect
+from ragtorio.extract.base import ExtractionReport
+from ragtorio.extract.postgres import PostgresFactStore
+from ragtorio.extract.repository import PageRepository, PostgresPageRepository
+from ragtorio.extract.store import FactStore
+from ragtorio.extract.template import TemplateExtractor
 from ragtorio.harvest.client import MediaWikiClient
 from ragtorio.harvest.crawl import Crawler
 from ragtorio.harvest.models import CrawlStats
@@ -102,6 +107,36 @@ def harvest(
         _render_stats(stats, postgres_store.namespace_counts(wiki_id))
 
 
+@app.command()
+def extract(
+    wiki_id: str = typer.Argument(..., help="Profile id, e.g. 'factorio'."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Read the crawl and report, write no facts."
+    ),
+    dsn: str | None = typer.Option(None, help="Postgres DSN. Defaults to RAGTORIO_POSTGRES_DSN."),
+) -> None:
+    """Turn a crawled wiki's infobox templates into fact rows.
+
+    Reads ``raw_page`` (already there from ``ragtorio harvest``) and replaces every
+    fact stored for this wiki, since a fact is always recomputable from the raw crawl.
+    """
+    profile_data = _load_profile_or_exit(wiki_id)
+
+    with connect(dsn or Settings().postgres_dsn) as conn:
+        apply_schema(conn)
+        page_repository: PageRepository = PostgresPageRepository(conn)
+        result = TemplateExtractor(profile_data, page_repository).extract()
+        _render_report(result.report)
+
+        if dry_run:
+            console.print("[yellow]dry run[/] nothing was written")
+            return
+
+        fact_store: FactStore = PostgresFactStore(conn)
+        fact_store.replace_all(wiki_id, result.facts)
+        console.print(f"wrote {fact_store.count(wiki_id):,} facts")
+
+
 def _crawl(
     profile_data: WikiProfile, settings: Settings, store: HarvestStore, limit: int | None
 ) -> CrawlStats:
@@ -158,6 +193,31 @@ def _render_stats(stats: CrawlStats, stored: dict[int, int]) -> None:
         for namespace, count in sorted(stats.by_namespace.items()):
             in_store = stored.get(namespace, 0)
             console.print(f"  {namespace:>5}  {count:>6,}  (in store: {in_store:,})")
+    console.print()
+
+
+def _render_report(report: ExtractionReport) -> None:
+    """Print the coverage report the Phase 2 exit criteria are checked against."""
+    coverage_style = "green" if report.coverage >= 0.95 else "yellow"
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_row("infobox pages seen", f"{report.pages_seen:,}")
+    table.add_row("pages yielding facts", f"{report.pages_with_facts:,}")
+    table.add_row("coverage", f"[{coverage_style}]{report.coverage:.1%}[/]")
+    table.add_row("unclassified pages", f"{len(report.unclassified_pages):,}")
+    table.add_row("parser failures", f"{len(report.parser_failures):,}")
+    console.print(table)
+
+    frequent = report.frequent_unknown_params()
+    if frequent:
+        console.print("\n[bold]unknown parameters seen more than 5 times[/]")
+        for name, count in frequent:
+            console.print(f"  {name:<30} {count:>4,}")
+
+    if report.parser_failures:
+        console.print("\n[bold]parser failures[/]")
+        for failure in report.parser_failures:
+            console.print(f"  {failure.page_title} / {failure.field}: {failure.error}")
+            console.print(f"    value: {failure.value!r}")
     console.print()
 
 
