@@ -1,4 +1,4 @@
-.PHONY: help venv install lint typecheck test test-unit check up down fixtures harvest extract
+.PHONY: help venv install lint typecheck test test-unit check up down fixtures harvest extract graph
 
 VENV := .venv
 PY   := $(VENV)/bin/python
@@ -43,3 +43,7 @@ harvest:         ## crawl the Factorio wiki into Postgres (set RAGTORIO_CONTACT_
 
 extract:         ## turn crawled infobox templates into fact rows (needs `make harvest` first)
 	$(VENV)/bin/ragtorio extract factorio
+
+graph:           ## resolve facts and load them into Neo4j (needs `make extract` first)
+	$(VENV)/bin/ragtorio graph load factorio
+	$(VENV)/bin/ragtorio graph check factorio

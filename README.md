@@ -9,9 +9,10 @@ research do I need before oil processing* - are answered from a knowledge graph 
 vector index. No model touches the ingestion pipeline, so no edge in the graph is
 hallucinated.
 
-> **Status: Phases 0-2 of 9 complete.** Scaffolding and wiki profile, the harvester, and
-> template extraction. The graph, index, retrieval, answering and benchmark are not
-> built yet. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+> **Status: Phases 0-3 of 9 complete.** Scaffolding and wiki profile, the harvester,
+> template extraction, and entity resolution into a Neo4j graph. The vector index,
+> real routing, grounded answering and the benchmark are not built yet.
+> See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 ## Why this wiki is harder than it looks
 
@@ -67,6 +68,10 @@ ragtorio init-db                                   # create the tables
 ragtorio harvest factorio --dry-run --limit 20     # crawl into memory, write nothing
 ragtorio harvest factorio                          # full crawl into Postgres
 ragtorio extract factorio                          # infobox templates -> fact rows
+
+ragtorio graph load factorio                        # resolve facts, load into Neo4j
+ragtorio graph check factorio                       # orphans, gaps, self-cycles
+ragtorio ask factorio "raw ore for one electronic circuit" --graph-only
 ```
 
 Copy `.env.example` to `.env` and set `RAGTORIO_CONTACT_EMAIL` before any crawl - wiki operators
@@ -105,6 +110,32 @@ A run replaces every fact stored for the wiki, since a fact is always recomputab
 coverage report - infobox pages seen, pages that yielded a fact, unknown parameters seen more
 than five times, and any parser failure together with the value that broke it.
 
+## The graph
+
+`ragtorio graph load` resolves every fact into a node or an edge, then writes it into Neo4j
+with `MERGE` (idempotent: re-running after a re-extraction is always safe). A few things are
+not directly stated by the ontology and worth knowing:
+
+- A page that is both an `Item` and carries its own recipe becomes **two** nodes - the item,
+  and `{title} (recipe)` - since a recipe's own properties (crafting time, what it consumes)
+  are not properties of the item it produces. A page already classified `Recipe` needs no split.
+- **`:Station` is not a `type_map` label.** It is added, after every edge resolves, to whatever
+  node is on the receiving end of a `CRAFTED_AT` edge - so the profile never hand-lists which
+  machines happen to craft things.
+- An item's `consumers` field carries no amount, unlike its own `recipe` field's ingredient
+  list. Both describe the same edge from opposite ends of the wiki, so they are merged, and the
+  version carrying a real amount wins.
+- A reference that does not resolve to a real node is **logged, not invented** -
+  `ragtorio graph check` lists these alongside orphans, recipes missing inputs or outputs, and
+  self-cycles (a recipe that consumes what it also produces - Kovarex enrichment process is a
+  legitimate one).
+
+`recipe_tree` walks an item down to raw materials, multiplying amounts level by level in
+Python. A fractional output amount (uranium processing) is read as a probability, and the
+batches needed are an expected-value calculation - the same reasoning the wiki's own article
+uses. `ragtorio ask --graph-only` is a stopgap: a regex, not real question routing, which is
+Phase 5's job.
+
 ## Adding a wiki
 
 A wiki is described by one YAML file in [`wikis/`](wikis/), validated on load. Nothing in
@@ -125,9 +156,10 @@ profile names a parser that has no implementation registered.
 ```
 wikis/factorio.yaml          the whole Factorio-specific surface
 src/ragtorio/
-  cli.py                     probe | profile | init-db | harvest | extract  (graph, ... to come)
+  cli.py                     probe | profile | init-db | harvest | extract | graph | ask
   config.py                  profile schema and loader, validated with pydantic
   db/schema.sql              raw_page, raw_redirect, raw_category, crawl_run, fact
+  db/neo4j.py                driver + schema application, mirrors db/connect.py
   harvest/client.py          rate-limited, retrying MediaWiki client
   harvest/probe.py           installed-versus-populated structured-data check
   harvest/crawl.py           two-pass crawl: list revisions, fetch only what changed
@@ -138,6 +170,12 @@ src/ragtorio/
   extract/parsers/           factorio_recipe_expr, plus_list: pure functions, fixture-tested
   extract/repository.py      read-only access to raw_page, real and in-memory
   extract/store.py           where facts go: a run replaces a wiki's facts wholesale
+  ontology/resolve.py        facts -> nodes and edges: ids, aliases, the Item/Recipe split
+  ontology/schema.cypher     per-label uniqueness constraints, title and alias indexes
+  ontology/load.py           batched, idempotent MERGE writes via APOC
+  ontology/check.py          orphans, incomplete recipes, self-cycles
+  ontology/recipe_tree.py    an item's ingredients, recursively, down to raw materials
+wikis/factorio.aliases.yaml  community shorthand ("green circuit", "blue science")
 tests/fixtures/wikitext/     committed wikitext, so extraction tests need no network
 docs/coverage/               what the wiki actually contains
 scripts/                     one-off Phase 0 measurement tools

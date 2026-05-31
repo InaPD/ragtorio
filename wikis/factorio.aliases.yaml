@@ -1,0 +1,23 @@
+# Community shorthand for the Factorio wiki: terms players actually type that are
+# neither a page title nor a redirect. Kept small and confident rather than
+# exhaustive - add an entry when a real question needs one, not speculatively.
+#
+# The circuit colors are wiki-documented (the Electronic circuit article itself
+# opens with "or 'green circuit'"); the science-pack and belt colors are standard,
+# long-stable Factorio terminology.
+
+aliases:
+  green circuit: Electronic circuit
+  red circuit: Advanced circuit
+  blue circuit: Processing unit
+
+  red science: Automation science pack
+  green science: Logistic science pack
+  blue science: Chemical science pack
+  purple science: Production science pack
+  yellow science: Utility science pack
+  white science: Space science pack
+
+  yellow belt: Transport belt
+  red belt: Fast transport belt
+  blue belt: Express transport belt

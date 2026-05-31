@@ -1,17 +1,24 @@
 """Command-line entry point.
 
 Phase 0 shipped ``probe`` and ``profile``; Phase 1 added ``init-db`` and ``harvest``;
-Phase 2 adds ``extract``. Later phases add graph, index, ask and bench.
+Phase 2 added ``extract``; Phase 3 adds ``graph load``/``graph check`` and a
+``--graph-only`` stopgap for ``ask``. Later phases add the vector index, real
+routing and the benchmark.
 """
 
 from __future__ import annotations
 
+import re
+
 import typer
+from neo4j import Driver
 from rich.console import Console
 from rich.table import Table
 
 from ragtorio.config import Settings, WikiProfile, load_profile
 from ragtorio.db.connect import apply_schema, connect
+from ragtorio.db.neo4j import apply_schema as apply_neo4j_schema
+from ragtorio.db.neo4j import connect as neo4j_connect
 from ragtorio.extract.base import ExtractionReport
 from ragtorio.extract.postgres import PostgresFactStore
 from ragtorio.extract.repository import PageRepository, PostgresPageRepository
@@ -24,12 +31,21 @@ from ragtorio.harvest.postgres import PostgresHarvestStore
 from ragtorio.harvest.probe import ProbeResult
 from ragtorio.harvest.probe import probe as run_probe
 from ragtorio.harvest.store import HarvestStore, InMemoryHarvestStore
+from ragtorio.ontology.aliases import load_aliases
+from ragtorio.ontology.check import GraphCheckReport, check_graph
+from ragtorio.ontology.load import GraphLoader
+from ragtorio.ontology.models import ResolvedGraph
+from ragtorio.ontology.recipe_tree import RecipeTreeNode, raw_totals, recipe_tree
+from ragtorio.ontology.repository import PostgresGraphSourceRepository
+from ragtorio.ontology.resolve import EntityResolver
 
 app = typer.Typer(
     help="Knowledge-graph and vector RAG over crafting-game wikis.",
     no_args_is_help=True,
     add_completion=False,
 )
+graph_app = typer.Typer(help="Load facts into Neo4j and check the result.")
+app.add_typer(graph_app, name="graph")
 console = Console()
 
 VERDICT_STYLE = {
@@ -137,6 +153,121 @@ def extract(
         console.print(f"wrote {fact_store.count(wiki_id):,} facts")
 
 
+@graph_app.command(name="load")
+def graph_load(
+    wiki_id: str = typer.Argument(..., help="Profile id, e.g. 'factorio'."),
+    dsn: str | None = typer.Option(None, help="Postgres DSN. Defaults to RAGTORIO_POSTGRES_DSN."),
+    neo4j_uri: str | None = typer.Option(None, help="Defaults to RAGTORIO_NEO4J_URI."),
+) -> None:
+    """Resolve a wiki's facts into a graph and load it into Neo4j.
+
+    Idempotent: every node and edge is re-derived from ``fact`` and written with
+    ``MERGE``, so running this again after a re-extraction is always safe.
+    """
+    settings = Settings()
+    resolved = _resolve(wiki_id, dsn, settings)
+    with _neo4j(settings, neo4j_uri) as driver:
+        apply_neo4j_schema(driver)
+        GraphLoader(driver).load(resolved)
+    _render_resolution(resolved)
+
+
+@graph_app.command(name="check")
+def graph_check(
+    wiki_id: str = typer.Argument(..., help="Profile id, e.g. 'factorio'."),
+    dsn: str | None = typer.Option(None, help="Postgres DSN. Defaults to RAGTORIO_POSTGRES_DSN."),
+    neo4j_uri: str | None = typer.Option(None, help="Defaults to RAGTORIO_NEO4J_URI."),
+) -> None:
+    """Check the loaded graph: orphans, incomplete recipes, self-cycles, unresolved
+    references from the most recent resolution."""
+    settings = Settings()
+    resolved = _resolve(wiki_id, dsn, settings)
+    with _neo4j(settings, neo4j_uri) as driver:
+        report = check_graph(driver, resolved.unresolved)
+    _render_check(report)
+
+
+#: Crude, temporary question parsing. Real routing (entity extraction through an
+#: LLM, resolved against aliases) is Phase 5; this exists only so the Phase 3 exit
+#: criterion's exact command shape works today.
+_GRAPH_ONLY_QUESTION = re.compile(
+    r"raw (?:ore|materials?) (?:for|to (?:make|craft|produce)) "
+    r"(?:one |a |an |\d+ )?(?P<entity>.+?)\.?$",
+    re.IGNORECASE,
+)
+
+
+@app.command()
+def ask(
+    wiki_id: str = typer.Argument(..., help="Profile id, e.g. 'factorio'."),
+    question: str = typer.Argument(..., help="A question, e.g. 'raw ore for one X'."),
+    graph_only: bool = typer.Option(
+        False, "--graph-only", help="Only implemented mode so far: recipe_tree."
+    ),
+    quantity: float = typer.Option(1.0, help="How many units of the entity."),
+    neo4j_uri: str | None = typer.Option(None, help="Defaults to RAGTORIO_NEO4J_URI."),
+) -> None:
+    """Answer a question from the graph. Routing and vector retrieval are Phase 5/6;
+    for now only ``--graph-only`` works, and only for a recipe_tree-shaped question."""
+    if not graph_only:
+        console.print(
+            "[red]only --graph-only is implemented so far[/] "
+            "(routing and vector retrieval are Phase 5/6)"
+        )
+        raise typer.Exit(code=1)
+
+    match = _GRAPH_ONLY_QUESTION.search(question.strip())
+    if match is None:
+        console.print(f"[red]could not find an item name in:[/] {question!r}")
+        raise typer.Exit(code=1)
+
+    settings = Settings()
+    with _neo4j(settings, neo4j_uri) as driver:
+        title = _resolve_title(driver, wiki_id, match.group("entity").strip())
+        if title is None:
+            console.print(f"[red]no entity matching[/] {match.group('entity')!r}")
+            raise typer.Exit(code=1)
+        tree = recipe_tree(driver, wiki_id, title, quantity)
+    _render_tree(tree)
+
+
+def _resolve_title(driver: Driver, wiki: str, name: str) -> str | None:
+    """A case-insensitive title lookup, standing in for Phase 5's real entity
+    resolution through aliases."""
+    with driver.session() as session:
+        row = session.run(
+            "MATCH (n) WHERE toLower(n.title) = toLower($name) AND n.id STARTS WITH $prefix "
+            "RETURN n.title AS title LIMIT 1",
+            name=name,
+            prefix=f"{wiki}:",
+        ).single()
+    return str(row["title"]) if row else None
+
+
+def _resolve(wiki_id: str, dsn: str | None, settings: Settings) -> ResolvedGraph:
+    """Read facts and crawl metadata, and resolve them into a graph. Cheap and
+    idempotent, so both ``graph load`` and ``graph check`` simply do it again."""
+    profile_data = _load_profile_or_exit(wiki_id)
+    with connect(dsn or settings.postgres_dsn) as conn:
+        source = PostgresGraphSourceRepository(conn)
+        facts = source.facts(wiki_id)
+        redirects = source.redirects(wiki_id)
+        archived = profile_data.wiki.archived
+        archived_titles: frozenset[str] = frozenset()
+        if archived.namespace_id is not None:
+            archived_titles |= source.titles_in_namespace(wiki_id, archived.namespace_id)
+        if archived.category is not None:
+            archived_titles |= source.titles_in_category(wiki_id, archived.category)
+    aliases = load_aliases(wiki_id)
+    return EntityResolver(wiki_id, facts, redirects, aliases, archived_titles).resolve()
+
+
+def _neo4j(settings: Settings, uri: str | None) -> Driver:
+    """A driver using the given URI or the configured default, and the settings'
+    Neo4j credentials either way."""
+    return neo4j_connect(uri or settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
+
+
 def _crawl(
     profile_data: WikiProfile, settings: Settings, store: HarvestStore, limit: int | None
 ) -> CrawlStats:
@@ -219,6 +350,57 @@ def _render_report(report: ExtractionReport) -> None:
             console.print(f"  {failure.page_title} / {failure.field}: {failure.error}")
             console.print(f"    value: {failure.value!r}")
     console.print()
+
+
+def _render_resolution(resolved: ResolvedGraph) -> None:
+    """Print what ``graph load`` wrote and what it could not resolve."""
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_row("nodes", f"{len(resolved.nodes):,}")
+    table.add_row("edges", f"{len(resolved.edges):,}")
+    table.add_row("unresolved references", f"{len(resolved.unresolved):,}")
+    console.print(table)
+    console.print()
+
+
+def _render_check(report: GraphCheckReport) -> None:
+    """Print the ``ragtorio graph check`` report."""
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_row("orphans", f"{len(report.orphans):,}")
+    table.add_row("recipes missing inputs", f"{len(report.recipes_missing_inputs):,}")
+    table.add_row("recipes missing outputs", f"{len(report.recipes_missing_outputs):,}")
+    table.add_row("self-cycles (legitimate)", f"{len(report.self_cycles):,}")
+    table.add_row("unresolved references", f"{len(report.unresolved):,}")
+    console.print(table)
+
+    if report.self_cycles:
+        console.print("\n[bold]self-cycles[/] (a recipe consuming what it also produces)")
+        for recipe_id, item_id in report.self_cycles:
+            console.print(f"  {recipe_id}  <->  {item_id}")
+
+    if report.orphans:
+        console.print(f"\n[yellow]orphans[/] ({len(report.orphans)}, showing up to 10)")
+        for node_id in report.orphans[:10]:
+            console.print(f"  {node_id}")
+    console.print()
+
+
+def _render_tree(node: RecipeTreeNode) -> None:
+    """Print a recipe tree as nested lines, then a raw-material total."""
+    console.print(f"\n[bold]{node.title}[/]  x{node.amount:g}")
+    for child in node.children:
+        _render_node(child, indent="  ")
+
+    console.print("\n[bold]raw materials[/]")
+    for name, amount in sorted(raw_totals(node).items()):
+        console.print(f"  {name}: {amount:g}")
+    console.print()
+
+
+def _render_node(node: RecipeTreeNode, indent: str) -> None:
+    marker = " (cycle, truncated)" if node.truncated else " (raw)" if node.is_raw else ""
+    console.print(f"{indent}{node.title}: {node.amount:g}{marker}")
+    for child in node.children:
+        _render_node(child, indent + "  ")
 
 
 def _render_probe(result: ProbeResult) -> None:
