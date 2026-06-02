@@ -20,6 +20,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "mwparserfromhell>=0.6",
     "neo4j>=5.0",
+    "anthropic>=1,<2",
 ]
 
 [project.optional-dependencies]

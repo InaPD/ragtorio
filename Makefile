@@ -1,4 +1,4 @@
-.PHONY: help venv install install-embed lint typecheck test test-unit check up down fixtures harvest extract graph index
+.PHONY: help venv install install-embed lint typecheck test test-unit check up down fixtures harvest extract graph index route
 
 VENV := .venv
 PY   := $(VENV)/bin/python
@@ -24,11 +24,12 @@ lint:            ## ruff check + format check
 typecheck:       ## mypy strict
 	$(VENV)/bin/mypy
 
-test:            ## pytest with coverage gate (integration tests need `make up`)
+test:            ## pytest with coverage gate (integration needs `make up`; clears the Neo4j graph)
 	$(VENV)/bin/pytest
 
-test-unit:       ## pytest without the tests that need a database
-	$(VENV)/bin/pytest -m "not integration"
+test-unit:       ## pytest without the tests that need a database (no coverage gate:
+                 ## the graph and CLI paths are covered by the integration tests)
+	$(VENV)/bin/pytest -m "not integration" --no-cov
 
 check: lint typecheck test  ## everything CI runs
 
@@ -54,3 +55,6 @@ graph:           ## resolve facts and load them into Neo4j (needs `make extract`
 index:           ## chunk and embed articles, then measure recall (needs `make install-embed`)
 	$(VENV)/bin/ragtorio index build factorio
 	$(VENV)/bin/ragtorio index recall factorio
+
+route:           ## measure the router on its labeled set (needs ANTHROPIC_API_KEY)
+	$(VENV)/bin/ragtorio route eval factorio --show-failures

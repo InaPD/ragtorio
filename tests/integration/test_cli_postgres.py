@@ -21,7 +21,11 @@ from ragtorio.harvest.client import MediaWikiClient
 from ragtorio.harvest.models import RawPage
 from ragtorio.harvest.postgres import PostgresHarvestStore
 
-DSN = os.environ.get("RAGTORIO_TEST_DSN", "postgresql://ragtorio:ragtorio@localhost:5433/ragtorio")
+#: A database of its own. These tests TRUNCATE, and pointing them at the one
+#: `ragtorio harvest` writes to means a `make test` silently destroys a crawl.
+DSN = os.environ.get(
+    "RAGTORIO_TEST_DSN", "postgresql://ragtorio:ragtorio@localhost:5433/ragtorio_test"
+)
 FACTORIO_API = "https://wiki.factorio.com/api.php"
 TABLES = ("fact", "raw_category", "raw_redirect", "raw_page", "crawl_run")
 
@@ -127,10 +131,10 @@ def test_extract_dry_run_writes_nothing_then_a_real_run_writes_facts(
     result = runner.invoke(app, ["extract", "factorio", "--dsn", DSN])
     assert result.exit_code == 0, result.output
     assert "coverage" in result.output
-    assert "wrote 168 facts" in result.output
+    assert "wrote 170 facts" in result.output
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM fact WHERE wiki = 'factorio'")
-        assert cur.fetchone() == (168,)
+        assert cur.fetchone() == (170,)
 
 
 def test_extract_replaces_facts_on_a_second_run(conn: Conn, factorio_pages: list[RawPage]) -> None:
@@ -143,4 +147,4 @@ def test_extract_replaces_facts_on_a_second_run(conn: Conn, factorio_pages: list
     assert second.exit_code == 0, second.output
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM fact WHERE wiki = 'factorio'")
-        assert cur.fetchone() == (168,)
+        assert cur.fetchone() == (170,)

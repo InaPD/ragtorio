@@ -2,13 +2,12 @@
 
 Phase 0 shipped ``probe`` and ``profile``; Phase 1 added ``init-db`` and ``harvest``;
 Phase 2 added ``extract``; Phase 3 added ``graph load``/``graph check`` and a
-``--graph-only`` stopgap for ``ask``; Phase 4 adds ``index build``/``index recall``.
-Later phases add real routing, grounded answering and the benchmark.
+``--graph-only`` stopgap for ``ask``; Phase 4 added ``index build``/``index recall``;
+Phase 5 replaces that stopgap with real routing and adds ``route eval``. Phase 6 adds
+grounded answering and the API.
 """
 
 from __future__ import annotations
-
-import re
 
 import typer
 from neo4j import Driver
@@ -41,9 +40,16 @@ from ragtorio.ontology.aliases import load_aliases
 from ragtorio.ontology.check import GraphCheckReport, check_graph
 from ragtorio.ontology.load import GraphLoader
 from ragtorio.ontology.models import ResolvedGraph
-from ragtorio.ontology.recipe_tree import RecipeTreeNode, raw_totals, recipe_tree
 from ragtorio.ontology.repository import PostgresGraphSourceRepository
 from ragtorio.ontology.resolve import EntityResolver
+from ragtorio.retrieve.entities import GraphEntityResolver
+from ragtorio.retrieve.evaluate import RouterReport, evaluate_router, load_questions
+from ragtorio.retrieve.graph import GraphRetriever
+from ragtorio.retrieve.log import PostgresRoutingLog, RoutingLog
+from ragtorio.retrieve.models import Intent, RetrievedContext
+from ragtorio.retrieve.pipeline import RetrievalPipeline
+from ragtorio.retrieve.router import AnthropicRouter, RouterUnavailableError
+from ragtorio.retrieve.vector import VectorRetriever
 
 app = typer.Typer(
     help="Knowledge-graph and vector RAG over crafting-game wikis.",
@@ -54,6 +60,8 @@ graph_app = typer.Typer(help="Load facts into Neo4j and check the result.")
 app.add_typer(graph_app, name="graph")
 index_app = typer.Typer(help="Chunk articles into a vector index and measure its recall.")
 app.add_typer(index_app, name="index")
+route_app = typer.Typer(help="Measure the question router against its labeled set.")
+app.add_typer(route_app, name="route")
 console = Console()
 
 VERDICT_STYLE = {
@@ -278,61 +286,81 @@ def index_recall(
     _render_recall(report, show_misses)
 
 
-#: Crude, temporary question parsing. Real routing (entity extraction through an
-#: LLM, resolved against aliases) is Phase 5; this exists only so the Phase 3 exit
-#: criterion's exact command shape works today.
-_GRAPH_ONLY_QUESTION = re.compile(
-    r"raw (?:ore|materials?) (?:for|to (?:make|craft|produce)) "
-    r"(?:one |a |an |\d+ )?(?P<entity>.+?)\.?$",
-    re.IGNORECASE,
-)
-
-
 @app.command()
 def ask(
     wiki_id: str = typer.Argument(..., help="Profile id, e.g. 'factorio'."),
-    question: str = typer.Argument(..., help="A question, e.g. 'raw ore for one X'."),
-    graph_only: bool = typer.Option(
-        False, "--graph-only", help="Only implemented mode so far: recipe_tree."
+    question: str = typer.Argument(..., help="A question about the wiki."),
+    intent: str | None = typer.Option(
+        None, help="Force graph | vector | both, bypassing the router's own choice."
     ),
-    quantity: float = typer.Option(1.0, help="How many units of the entity."),
+    provider: str = typer.Option(
+        "sentence-transformers", help="Must match the provider the index was built with."
+    ),
+    model: str | None = typer.Option(None, help="Embedding model. Defaults to the provider's."),
+    show_context: bool = typer.Option(
+        False, "--show-context", help="Print the retrieved passages, not just the route."
+    ),
+    dsn: str | None = typer.Option(None, help="Postgres DSN. Defaults to RAGTORIO_POSTGRES_DSN."),
     neo4j_uri: str | None = typer.Option(None, help="Defaults to RAGTORIO_NEO4J_URI."),
 ) -> None:
-    """Answer a question from the graph. Routing and vector retrieval are Phase 5/6;
-    for now only ``--graph-only`` works, and only for a recipe_tree-shaped question."""
-    if not graph_only:
-        console.print(
-            "[red]only --graph-only is implemented so far[/] "
-            "(routing and vector retrieval are Phase 5/6)"
-        )
-        raise typer.Exit(code=1)
+    """Route a question, retrieve from the graph and the index, and show the context.
 
-    match = _GRAPH_ONLY_QUESTION.search(question.strip())
-    if match is None:
-        console.print(f"[red]could not find an item name in:[/] {question!r}")
-        raise typer.Exit(code=1)
-
+    This is retrieval only. Generating a grounded answer from the context, with
+    citations validated against the chunk ids below, is Phase 6.
+    """
     settings = Settings()
+    profile_data = _load_profile_or_exit(wiki_id)
+    forced = _intent_or_exit(intent)
+    embedder = _build_provider_or_exit(provider, model)
+
+    with (
+        connect(dsn or settings.postgres_dsn) as conn,
+        _neo4j(settings, neo4j_uri) as driver,
+    ):
+        apply_schema(conn)
+        chunk_store: ChunkStore = PostgresChunkStore(conn)
+        log: RoutingLog = PostgresRoutingLog(conn)
+        pipeline = RetrievalPipeline(
+            wiki_id,
+            router=_router_or_exit(driver, wiki_id),
+            graph=GraphRetriever(driver, wiki_id, raw_items=profile_data.resolution.raw_item_set),
+            vector=VectorRetriever(chunk_store, embedder, wiki_id),
+            log=log,
+        )
+        try:
+            context = pipeline.retrieve(question, force_intent=forced)
+        except RouterUnavailableError as exc:
+            raise _exit_on_unavailable_router(exc) from exc
+    _render_context(context, show_context)
+
+
+@route_app.command(name="eval")
+def route_eval(
+    wiki_id: str = typer.Argument(..., help="Profile id, e.g. 'factorio'."),
+    show_failures: bool = typer.Option(
+        False, "--show-failures", help="List every question the router got wrong."
+    ),
+    neo4j_uri: str | None = typer.Option(None, help="Defaults to RAGTORIO_NEO4J_URI."),
+) -> None:
+    """Measure the router against the wiki's hand-labeled question set.
+
+    One model call per question. Entities are resolved against the loaded graph, so
+    this also reports the mentions the router invented or spelled in a way nothing
+    matches - which an accuracy number on its own would hide.
+    """
+    settings = Settings()
+    try:
+        questions = load_questions(wiki_id)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
+
     with _neo4j(settings, neo4j_uri) as driver:
-        title = _resolve_title(driver, wiki_id, match.group("entity").strip())
-        if title is None:
-            console.print(f"[red]no entity matching[/] {match.group('entity')!r}")
-            raise typer.Exit(code=1)
-        tree = recipe_tree(driver, wiki_id, title, quantity)
-    _render_tree(tree)
-
-
-def _resolve_title(driver: Driver, wiki: str, name: str) -> str | None:
-    """A case-insensitive title lookup, standing in for Phase 5's real entity
-    resolution through aliases."""
-    with driver.session() as session:
-        row = session.run(
-            "MATCH (n) WHERE toLower(n.title) = toLower($name) AND n.id STARTS WITH $prefix "
-            "RETURN n.title AS title LIMIT 1",
-            name=name,
-            prefix=f"{wiki}:",
-        ).single()
-    return str(row["title"]) if row else None
+        try:
+            report = evaluate_router(_router_or_exit(driver, wiki_id), questions)
+        except RouterUnavailableError as exc:
+            raise _exit_on_unavailable_router(exc) from exc
+    _render_router_report(report, show_failures)
 
 
 def _resolve(wiki_id: str, dsn: str | None, settings: Settings) -> ResolvedGraph:
@@ -349,8 +377,18 @@ def _resolve(wiki_id: str, dsn: str | None, settings: Settings) -> ResolvedGraph
             archived_titles |= source.titles_in_namespace(wiki_id, archived.namespace_id)
         if archived.category is not None:
             archived_titles |= source.titles_in_category(wiki_id, archived.category)
+        categories = source.categories_by_title(wiki_id)
     aliases = load_aliases(wiki_id)
-    return EntityResolver(wiki_id, facts, redirects, aliases, archived_titles).resolve()
+    return EntityResolver(
+        wiki_id,
+        facts,
+        redirects,
+        aliases,
+        archived_titles,
+        categories,
+        profile_data.resolution.reference_suffixes,
+        profile_data.resolution.recipe_suffix,
+    ).resolve()
 
 
 def _neo4j(settings: Settings, uri: str | None) -> Driver:
@@ -494,6 +532,94 @@ def _int_list(raw: str) -> list[int]:
         raise typer.Exit(code=1) from exc
 
 
+def _intent_or_exit(intent: str | None) -> Intent | None:
+    """Validate a forced intent, which is how the benchmark's two baselines are run."""
+    if intent is None:
+        return None
+    allowed: dict[str, Intent] = {"graph": "graph", "vector": "vector", "both": "both"}
+    if intent in allowed:
+        return allowed[intent]
+    console.print(f"[red]intent must be graph, vector or both, got[/] {intent!r}")
+    raise typer.Exit(code=1)
+
+
+def _router_or_exit(driver: Driver, wiki_id: str) -> AnthropicRouter:
+    """Build the router. Credentials are not checked here - the SDK resolves them on
+    the first request, so a missing key surfaces from :class:`RouterUnavailableError`."""
+    profile_data = _load_profile_or_exit(wiki_id)
+    return AnthropicRouter(
+        GraphEntityResolver(driver, wiki_id),
+        comparable_properties=profile_data.retrieval.comparable_properties,
+    )
+
+
+def _exit_on_unavailable_router(exc: RouterUnavailableError) -> typer.Exit:
+    """Turn an unusable router into a clean exit rather than a traceback."""
+    console.print(f"[red]routing is unavailable[/] - {exc}")
+    return typer.Exit(code=1)
+
+
+def _render_context(context: RetrievedContext, show_context: bool) -> None:
+    """Print the route and what it retrieved."""
+    route = context.route
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_row("intent", f"{route.intent}{' (downgraded)' if route.downgraded else ''}")
+    table.add_row("template", route.template or "-")
+    table.add_row("confidence", f"{route.confidence:.2f}")
+    table.add_row("entities", ", ".join(e.title for e in route.entities) or "-")
+    if route.unresolved:
+        table.add_row("unresolved", ", ".join(route.unresolved))
+    table.add_row("context", f"{context.total_tokens:,} tokens in {len(context.blocks)} blocks")
+    table.add_row("latency", f"{context.latency_ms:.0f} ms")
+    console.print(table)
+
+    for block in context.blocks:
+        if block.label == "graph_facts":
+            console.print(f"\n[bold]graph facts[/] ({block.tokens:,} tokens)")
+            console.print(block.text)
+        elif show_context:
+            console.print(f"\n[bold]passages[/] ({block.tokens:,} tokens)")
+            console.print(block.text)
+        else:
+            console.print(f"\n[bold]passages[/] {len(context.chunk_ids)} chunks (--show-context)")
+            for chunk_id in context.chunk_ids:
+                console.print(f"  {chunk_id}")
+    console.print()
+
+
+def _render_router_report(report: RouterReport, show_failures: bool) -> None:
+    """Print the report the Phase 5 exit criterion is checked against."""
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_row("questions", f"{len(report.outcomes):,}")
+    intent_style = "green" if report.intent_accuracy >= 0.9 else "yellow"
+    template_style = "green" if report.template_accuracy >= 0.9 else "yellow"
+    table.add_row("intent accuracy", f"[{intent_style}]{report.intent_accuracy:.1%}[/]")
+    table.add_row("template accuracy", f"[{template_style}]{report.template_accuracy:.1%}[/]")
+    table.add_row("downgraded to both", f"{report.downgraded:,}")
+    table.add_row("latency", f"p50 {report.p50_ms:.0f} ms, p95 {report.p95_ms:.0f} ms")
+    console.print(table)
+
+    verdict = "[green]meets[/]" if report.meets_target else "[yellow]below[/]"
+    console.print(f"\n{verdict} the Phase 5 target of 90% on both measures")
+
+    if report.unresolved_entities:
+        console.print(
+            f"\n[yellow]entities that resolved to nothing[/] ({len(report.unresolved_entities)})"
+        )
+        for mention in report.unresolved_entities:
+            console.print(f"  {mention}")
+
+    if show_failures and report.failures:
+        console.print(f"\n[bold]failures[/] ({len(report.failures)})")
+        for outcome in report.failures:
+            console.print(f"  {outcome.question}")
+            console.print(
+                f"    wanted {outcome.expected_intent}/{outcome.expected_template or '-'}, "
+                f"got {outcome.route.intent}/{outcome.route.template or '-'}"
+            )
+    console.print()
+
+
 def _render_index_report(report: IndexReport) -> None:
     """Print what one index build produced."""
     table = Table(show_header=False, box=None, pad_edge=False)
@@ -556,25 +682,6 @@ def _render_sweep(reports: list[RecallReport]) -> None:
         )
     console.print(table)
     console.print()
-
-
-def _render_tree(node: RecipeTreeNode) -> None:
-    """Print a recipe tree as nested lines, then a raw-material total."""
-    console.print(f"\n[bold]{node.title}[/]  x{node.amount:g}")
-    for child in node.children:
-        _render_node(child, indent="  ")
-
-    console.print("\n[bold]raw materials[/]")
-    for name, amount in sorted(raw_totals(node).items()):
-        console.print(f"  {name}: {amount:g}")
-    console.print()
-
-
-def _render_node(node: RecipeTreeNode, indent: str) -> None:
-    marker = " (cycle, truncated)" if node.truncated else " (raw)" if node.is_raw else ""
-    console.print(f"{indent}{node.title}: {node.amount:g}{marker}")
-    for child in node.children:
-        _render_node(child, indent + "  ")
 
 
 def _render_probe(result: ProbeResult) -> None:

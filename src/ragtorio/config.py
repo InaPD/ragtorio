@@ -18,21 +18,18 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ragtorio.extract.parsers import PARSER_REGISTRY
+
 #: Node labels the ontology allows. See IMPLEMENTATION_PLAN.md section 4.
 KNOWN_LABELS: frozenset[str] = frozenset({"Item", "Fluid", "Recipe", "Station", "Unlock"})
 
-#: Parser functions a profile may reference. Implemented in ``extract/parsers/`` (Phase 2);
-#: listed here so that a misspelled parser name is caught when the profile loads.
-KNOWN_PARSERS: frozenset[str] = frozenset(
-    {
-        "factorio_recipe_expr",
-        "plus_list",
-        "link_list",
-        "name_template",
-        "name_template_list",
-        "duration",
-    }
-)
+#: Parser functions a profile may reference, taken straight from the registry that
+#: implements them. This was a hand-written list, which drifted: four of its seven
+#: names had no implementation, so a profile naming one passed validation here and
+#: then failed when the extractor was constructed. A list of parsers somebody meant
+#: to write is not an extension point, and deriving the set means the two cannot
+#: disagree again.
+KNOWN_PARSERS: frozenset[str] = frozenset(PARSER_REGISTRY)
 
 #: Grammar for a field mapping's ``to`` target.
 _TO_PATTERN = re.compile(r"^(?:prop\.[a-z][a-z0-9_]*|rel\.[A-Z][A-Z0-9_]*|recipe)$")
@@ -128,6 +125,11 @@ class FieldMapping(BaseModel):
             )
         if self.parser and self.type:
             raise ValueError("a field mapping takes either 'parser' or 'type', not both")
+        if self.to == "recipe" and not self.parser:
+            raise ValueError(
+                "the 'recipe' target needs a parser: recipe grammar is the thing that "
+                "differs most between wikis, so there is no sensible default"
+            )
         return self
 
 
@@ -194,6 +196,18 @@ class InfoboxConfig(BaseModel):
                 )
         return self
 
+    @property
+    def source_namespace(self) -> int:
+        """The namespace whose pages carry an infobox.
+
+        For ``separate_namespace`` that is the dedicated one the profile names. For
+        ``inline`` the infobox is in the article itself, so it is the article
+        namespace - mainspace unless a profile says otherwise.
+        """
+        if self.namespace_id is not None:
+            return self.namespace_id
+        return 0
+
     def labels_for(self, type_value: str) -> list[str]:
         """Labels for a ``type_field`` value. An empty list means deliberately ignored."""
         return self.type_map.get(type_value, [])
@@ -256,6 +270,62 @@ class IndexConfig(BaseModel):
         return any(title.startswith(prefix) for prefix in self.exclude_title_prefixes)
 
 
+class ResolutionConfig(BaseModel):
+    """How a reference in one infobox field names a page that another field titles.
+
+    Factorio's ``allows`` names a technology "Flammables" while its page is
+    "Flammables (research)". Rather than hardcoding that, a profile lists the suffixes
+    worth trying when a technology reference does not resolve on its own.
+
+    ``recipe_suffix`` names the second node a page gets when it is both an item and a
+    recipe - ``Iron gear wheel`` and ``Iron gear wheel (recipe)``. It is a naming
+    convention, not a fact about any wiki, and it was hardcoded in two places before
+    it was written down here.
+
+    ``raw_items`` is the companion escape hatch for the ontology's "an Item with no
+    inbound PRODUCES edge is raw" rule. That rule is right for ores and wrong for
+    water, which the game gives away from a pump but the wiki also documents two
+    recipes for - so a recipe tree that trusted the graph priced one processing unit
+    at hundreds of units of an Aquilo-only fluid.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reference_suffixes: list[str] = Field(default_factory=list)
+    raw_items: list[str] = Field(default_factory=list)
+    recipe_suffix: str = "(recipe)"
+
+    @property
+    def raw_item_set(self) -> frozenset[str]:
+        """Titles to treat as raw materials whatever the graph says, casefolded."""
+        return frozenset(title.casefold() for title in self.raw_items)
+
+
+class RetrievalConfig(BaseModel):
+    """What the query templates are allowed to ask for.
+
+    ``comparable_properties`` is the closed set ``tier_compare`` may order by, and the
+    list the router is told about. It has to be a profile key rather than a constant:
+    the names are whatever that wiki's infobox fields were mapped to, and hardcoding
+    Factorio's three put one game's vocabulary in the middle of the retrieval layer.
+    The first entry is the default when a question names no property.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    comparable_properties: list[str] = Field(default_factory=list)
+
+    @property
+    def default_property(self) -> str | None:
+        return self.comparable_properties[0] if self.comparable_properties else None
+
+    def comparable(self, name: str | None) -> str | None:
+        """The property to order by: the one asked for if allowed, else the default."""
+        if name is not None and name in self.comparable_properties:
+            return name
+        return self.default_property
+
+
 class GroundTruth(BaseModel):
     """Where the authoritative game data for benchmarking lives."""
 
@@ -274,6 +344,8 @@ class WikiProfile(BaseModel):
     infobox: InfoboxConfig
     inline_templates: dict[str, InlineTemplate] = Field(default_factory=dict)
     index: IndexConfig = IndexConfig()
+    resolution: ResolutionConfig = ResolutionConfig()
+    retrieval: RetrievalConfig = RetrievalConfig()
     ground_truth: GroundTruth | None = None
 
     @property

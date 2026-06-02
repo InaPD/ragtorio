@@ -1,4 +1,4 @@
-"""``graph load``, ``graph check`` and ``ask --graph-only``, end to end through
+"""``graph load`` and ``graph check``, end to end through
 Postgres and Neo4j. Skipped, not failed, when either is unreachable.
 """
 
@@ -18,7 +18,7 @@ from ragtorio.extract.models import Fact, Provenance
 from ragtorio.extract.postgres import PostgresFactStore
 
 PG_DSN = os.environ.get(
-    "RAGTORIO_TEST_DSN", "postgresql://ragtorio:ragtorio@localhost:5433/ragtorio"
+    "RAGTORIO_TEST_DSN", "postgresql://ragtorio:ragtorio@localhost:5433/ragtorio_test"
 )
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_AUTH = ("neo4j", "ragtorio")
@@ -48,7 +48,12 @@ pytestmark = [
 
 def _clear_neo4j() -> None:
     with GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH) as driver, driver.session() as session:
-        session.run("MATCH (n) DETACH DELETE n")
+        session.run(
+            # Scoped to this wiki: a full wipe here would take a real
+            # crawl with it.
+            "MATCH (n) WHERE n.id STARTS WITH $p DETACH DELETE n",
+            p="factorio:",
+        )
 
 
 @pytest.fixture
@@ -118,37 +123,3 @@ def test_graph_load_then_check_report_the_widget_chain(conn: Conn) -> None:
     # A complete little chain: nothing orphaned, nothing missing, nothing unresolved.
     assert "orphans                   0" in check_result.output
     assert "unresolved references     0" in check_result.output
-
-
-def test_ask_graph_only_answers_the_widget_chain(conn: Conn) -> None:
-    _seed_widget_chain(conn)
-    runner.invoke(app, ["graph", "load", "factorio", "--dsn", PG_DSN])
-
-    result = runner.invoke(app, ["ask", "factorio", "raw ore for one widget", "--graph-only"])
-
-    assert result.exit_code == 0, result.output
-    assert "Widget" in result.output
-    assert "Gear: 2" in result.output
-    assert "raw materials" in result.output
-    assert "Gear: 2" in result.output.split("raw materials")[1]
-
-
-def test_ask_without_graph_only_is_not_yet_implemented() -> None:
-    result = runner.invoke(app, ["ask", "factorio", "anything"])
-    assert result.exit_code == 1
-    assert "Phase 5" in " ".join(result.output.split())  # normalize rich's line wrap
-
-
-def test_ask_with_an_unrecognised_question_shape_exits_cleanly() -> None:
-    result = runner.invoke(app, ["ask", "factorio", "what is love", "--graph-only"])
-    assert result.exit_code == 1
-    assert "could not find an item name" in result.output
-
-
-def test_ask_for_an_entity_the_graph_does_not_have_exits_cleanly(conn: Conn) -> None:
-    """The question parses fine; nothing in the (empty) graph matches it."""
-    result = runner.invoke(
-        app, ["ask", "factorio", "raw ore for one nonexistent widget", "--graph-only"]
-    )
-    assert result.exit_code == 1
-    assert "no entity matching" in result.output

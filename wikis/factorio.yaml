@@ -146,6 +146,13 @@ infobox:
     internal-name: { to: prop.internal_name }
     stack-size: { to: prop.stack_size, type: int }
 
+    # Plain decimals on all 146 pages that carry it. Mapped because tier_compare
+    # needs numeric node properties to order by, and this is one of only three the
+    # wiki states unconditionally (the others are stack-size and a recipe's own
+    # crafting time). "health" is the obvious fourth but arrives wrapped in
+    # {{Quality|150|195|...}} and would need its own parser.
+    mining-time: { to: prop.mining_time, type: float }
+
     # "Time, 0.5 + Iron plate, 2" or, when the output is not the page's own
     # entity, "Time, 60 + Uranium-235, 40 = Uranium-235, 41 + Uranium-238, 2".
     # 72 of 284 recipe fields carry that explicit output side; amounts may be
@@ -156,15 +163,22 @@ infobox:
     consumers: { to: rel.CONSUMED_BY, parser: plus_list }
 
     # Technology fields. "effects" is what the research makes available
-    # (167/228 techs); "cost" is the science packs it consumes (197/228);
-    # "required-technologies" (226/228) mixes prerequisite technologies with
-    # science-pack items, so Phase 3 keeps only the edges that resolve to an
-    # Unlock. "allows" is deliberately unmapped: it lists follow-on technologies
-    # and is the exact inverse of their own required-technologies, so mapping it
-    # would double every prerequisite edge.
+    # (167/228 techs); "cost" is the science packs it consumes (197/228).
     effects: { to: rel.UNLOCKS, parser: plus_list }
     cost: { to: rel.COSTS, parser: factorio_recipe_expr }
+
+    # "required-technologies" is on 226/228 technology pages and reads like the
+    # prerequisite list. It is not: measured across the whole crawl, none of its
+    # 696 entries names a technology - they are science packs and items. It stays
+    # mapped because Phase 3 keeps only the edges whose ends are both an Unlock,
+    # so the science packs drop out and anything that ever is a technology counts.
     required-technologies: { to: rel.REQUIRES, parser: plus_list }
+
+    # "allows" is where the technology tree actually lives, on 179 pages. It names
+    # the research a technology leads to, which is the same statement as those
+    # technologies requiring it, so Phase 3 inverts it into REQUIRES. Entries carry
+    # a trailing level range ("Automation 2, 2") that has no place in the ontology.
+    allows: { to: rel.ALLOWS, parser: leveled_name_list }
 
 # Phase 4: how article prose becomes retrievable chunks.
 index:
@@ -199,6 +213,42 @@ inline_templates:
   history:
     to: version_event
     args: [version, text]
+
+resolution:
+  # "allows" names a technology "Flammables"; its page is "Flammables (research)".
+  reference_suffixes: ["(research)"]
+
+  # Things you mine or pump, which the wiki also documents a recipe for. The
+  # ontology's "an Item with no inbound PRODUCES edge is raw" rule was written before
+  # Space Age added synthesis routes for base resources, and it now misfires: water
+  # gets melted from ice, coal gets synthesised on Vulcanus, and a recipe tree
+  # walking those priced one processing unit at 377 petroleum gas instead of 47.
+  #
+  # Derived, not guessed - every Item in Category:Resources that has an inbound
+  # PRODUCES edge, plus the two fluids the game gives away that carry no category:
+  #
+  #   MATCH (i:Item) WHERE 'Resources' IN coalesce(i.categories, [])
+  #   MATCH (r:Recipe)-[:PRODUCES]->(i) RETURN DISTINCT i.title
+  #
+  # Ores not listed here need no entry: nothing produces them, so the rule already
+  # calls them raw. Re-run that query after a re-crawl if the game adds more.
+  raw_items:
+    - Water
+    - Steam
+    - Coal
+    - Stone
+    - Ice
+    - Holmium ore
+    - Raw fish
+
+retrieval:
+  # What `tier_compare` may order by, first entry the default. These are the only
+  # numeric properties the profile's field mappings actually produce; the wiki states
+  # others (throughput, energy, health) in grammars nothing parses yet.
+  comparable_properties:
+    - stack_size
+    - mining_time
+    - crafting_time
 
 ground_truth:
   kind: factorio_data_raw

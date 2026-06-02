@@ -122,3 +122,28 @@ CREATE INDEX IF NOT EXISTS chunk_embedding_idx ON chunk USING hnsw (embedding ve
 -- Phase 5 filters retrieval by the entities its router resolved, which is a
 -- containment test over an array: GIN, not btree.
 CREATE INDEX IF NOT EXISTS chunk_entities_idx ON chunk USING gin (mentioned_entity_ids);
+
+-- Phase 5: what the router decided, for every question asked.
+--
+-- Not a debug log. The router is a model call on the hot path, so the only way to
+-- know whether it is still routing well after a prompt change is to have the
+-- decisions it made, with the entities it resolved and the chunks that came back.
+-- chunk_ids is the set Phase 6 validates citations against, kept per question so a
+-- bad answer can be traced to what was actually retrieved rather than re-run.
+CREATE TABLE IF NOT EXISTS routing_log (
+    log_id      bigserial   PRIMARY KEY,
+    wiki        text        NOT NULL,
+    question    text        NOT NULL,
+    intent      text        NOT NULL,
+    template    text,
+    entities    text[]      NOT NULL DEFAULT '{}',
+    unresolved  text[]      NOT NULL DEFAULT '{}',
+    confidence  real,
+    downgraded  boolean     NOT NULL DEFAULT false,
+    chunk_ids   text[]      NOT NULL DEFAULT '{}',
+    latency_ms  real        NOT NULL DEFAULT 0,
+    asked_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS routing_log_wiki_idx ON routing_log (wiki, asked_at DESC);
+CREATE INDEX IF NOT EXISTS routing_log_template_idx ON routing_log (wiki, template);

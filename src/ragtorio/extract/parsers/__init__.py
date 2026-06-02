@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from ragtorio.extract.parsers.lists import plus_list
+from ragtorio.extract.parsers.lists import leveled_name_list, plus_list
 from ragtorio.extract.parsers.recipe import Ingredient, RecipeExpr, factorio_recipe_expr
 
 #: Every parser a profile may name, keyed exactly as ``config.KNOWN_PARSERS`` spells it.
@@ -21,6 +21,14 @@ from ragtorio.extract.parsers.recipe import Ingredient, RecipeExpr, factorio_rec
 PARSER_REGISTRY: dict[str, Callable[[str], Any]] = {
     "factorio_recipe_expr": factorio_recipe_expr,
     "plus_list": plus_list,
+    "leveled_name_list": leveled_name_list,
 }
 
-__all__ = ["PARSER_REGISTRY", "Ingredient", "RecipeExpr", "factorio_recipe_expr", "plus_list"]
+__all__ = [
+    "PARSER_REGISTRY",
+    "Ingredient",
+    "RecipeExpr",
+    "factorio_recipe_expr",
+    "leveled_name_list",
+    "plus_list",
+]

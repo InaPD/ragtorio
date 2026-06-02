@@ -1,17 +1,28 @@
-"""The extractor: infobox pages and their article's ``{{history}}`` templates to facts.
+"""The extractor: infobox templates and inline ``{{history}}`` templates to facts.
 
-Walks the infobox namespace (not the mainspace) because that direction is the reliable
-one: every ``Infobox:X`` page corresponds to exactly one article, ``X``, by construction
-of the wiki's own namespace convention, whereas finding a page's infobox by parsing its
-prose for a ``{{:Infobox:X}}`` transclusion would mean walking the much larger, far
+Two layouts, because wikis disagree about where an infobox lives.
+
+**``separate_namespace``** is Factorio's: every ``Infobox:X`` page corresponds to
+exactly one article, ``X``, by construction of the wiki's own namespace convention.
+Walking that namespace is the reliable direction - finding a page's infobox by parsing
+its prose for a ``{{:Infobox:X}}`` transclusion would mean walking the much larger, far
 more template-heavy mainspace for no extra information. ``{{history}}`` is the one
-thing that lives only in the article, so that page is still fetched, but only by exact
+thing that lives only in the article, so that page is fetched separately, by exact
 title, once per infobox page.
+
+**``inline``** is what most wikis do: the infobox is a template call in the article
+itself. The walk is then over the article namespace, the subject is the page's own
+title, and there is no second page to fetch - the article being walked is already the
+one whose ``{{history}}`` templates matter.
+
+Everything between those two points is shared, which is the reason the difference is
+two branches rather than two extractors.
 """
 
 from __future__ import annotations
 
 from collections import Counter
+from typing import Any
 
 import mwparserfromhell
 from mwparserfromhell.nodes import Template
@@ -39,15 +50,10 @@ class TemplateExtractor:
     """
 
     def __init__(self, profile: WikiProfile, pages: PageRepository) -> None:
-        if profile.infobox.location != "separate_namespace":
-            raise ValueError(
-                f"TemplateExtractor only supports infobox.location 'separate_namespace', "
-                f"got {profile.infobox.location!r}"
-            )
-        assert profile.infobox.namespace_id is not None  # guaranteed by WikiProfile's own validator
         self._profile = profile
         self._pages = pages
-        self._namespace_id = profile.infobox.namespace_id
+        self._separate = profile.infobox.location == "separate_namespace"
+        self._namespace_id = profile.infobox.source_namespace
         self._known_params = _known_params(profile)
         _validate_parsers(profile)
 
@@ -94,7 +100,9 @@ class TemplateExtractor:
             return []
 
         params = {str(p.name).strip(): str(p.value).strip() for p in template.params}
-        subject = _strip_namespace(infobox_page.title)
+        # Only strip a prefix when there is one to strip: an inline wiki's titles can
+        # legitimately contain a colon ("Tutorial:Circuit network cookbook").
+        subject = _strip_namespace(infobox_page.title) if self._separate else infobox_page.title
         labels = self._classify(params)
         if labels is None:
             return None
@@ -124,7 +132,8 @@ class TemplateExtractor:
             if name not in self._known_params:
                 unknown_params[name] += 1
 
-        article = self._pages.by_title(self.wiki, subject)
+        # Inline: the page being walked is the article, so there is nothing to fetch.
+        article = infobox_page if not self._separate else self._pages.by_title(self.wiki, subject)
         if article is not None:
             facts.extend(self._history_facts(subject, labels, article))
 
@@ -145,49 +154,45 @@ class TemplateExtractor:
     ) -> list[Fact]:
         to = mapping.to
         if to == _RECIPE_SENTINEL:
-            return self._recipe_facts(subject, labels, raw, provenance)
+            # mapping.parser, not a hardcoded name: WikiProfile guarantees the recipe
+            # target has one, and which grammar it speaks is the whole point.
+            assert mapping.parser is not None
+            return self._recipe_facts(subject, labels, mapping.parser, raw, provenance)
 
-        if mapping.parser == "factorio_recipe_expr":
-            expr = _parse_recipe(raw)
-            return [
-                Fact(
-                    subject=subject,
-                    subject_labels=tuple(labels),
-                    predicate=to,
-                    object=ingredient.name,
-                    props={"amount": ingredient.amount},
-                    provenance=provenance,
-                )
-                for ingredient in expr.inputs
-            ]
-
-        if mapping.parser == "plus_list":
-            names = _parse_list(raw)
-            return [
-                Fact(
-                    subject=subject,
-                    subject_labels=tuple(labels),
-                    predicate=to,
-                    object=name,
-                    provenance=provenance,
-                )
-                for name in names
-            ]
-
-        return [
-            Fact(
+        def fact(value: str | float, **props: Any) -> Fact:
+            return Fact(
                 subject=subject,
                 subject_labels=tuple(labels),
                 predicate=to,
-                object=_coerce_scalar(raw, mapping.type),
+                object=value,
+                props=props,
                 provenance=provenance,
             )
-        ]
+
+        if mapping.parser is None:
+            return [fact(_coerce_scalar(raw, mapping.type))]
+
+        # Dispatch on what the parser returns, not on which parser it is. Keying this
+        # on the parser's name meant a new one silently fell through to the scalar
+        # branch and its whole list arrived as a single unsplit string - which is how
+        # `allows` produced one fact reading "Flammables + Plastics + Sulfur
+        # processing" instead of three edges.
+        parsed = _run_parser(mapping.parser, raw)
+        if isinstance(parsed, RecipeExpr):
+            return [fact(i.name, amount=i.amount) for i in parsed.inputs]
+        if isinstance(parsed, list):
+            return [fact(str(name)) for name in parsed]
+        return [fact(_coerce_scalar(str(parsed), mapping.type))]
 
     def _recipe_facts(
-        self, subject: str, labels: list[str], raw: str, provenance: Provenance
+        self,
+        subject: str,
+        labels: list[str],
+        parser: str,
+        raw: str,
+        provenance: Provenance,
     ) -> list[Fact]:
-        expr = _parse_recipe(raw)
+        expr = _parse_recipe(parser, raw)
         facts = [
             Fact(
                 subject=subject,
@@ -274,16 +279,26 @@ def _validate_parsers(profile: WikiProfile) -> None:
         )
 
 
-def _parse_recipe(raw: str) -> RecipeExpr:
-    result = PARSER_REGISTRY["factorio_recipe_expr"](raw)
-    assert isinstance(result, RecipeExpr)  # the registry is keyed by name; this pins the type
+def _parse_recipe(parser: str, raw: str) -> RecipeExpr:
+    """Run the profile's recipe parser and insist it produced a recipe.
+
+    The ``recipe`` target is the one field mapping whose *shape* the ontology depends
+    on - a time, inputs, and optional outputs - so a parser wired to it that returns
+    something else is a profile error worth naming rather than a crash three frames
+    later.
+    """
+    result = PARSER_REGISTRY[parser](raw)
+    if not isinstance(result, RecipeExpr):
+        raise ValueError(
+            f"the 'recipe' target needs a parser returning a RecipeExpr; "
+            f"{parser!r} returned {type(result).__name__}"
+        )
     return result
 
 
-def _parse_list(raw: str) -> list[str]:
-    result = PARSER_REGISTRY["plus_list"](raw)
-    assert isinstance(result, list)
-    return result
+def _run_parser(name: str, raw: str) -> Any:
+    """Run a profile-named parser. Construction already proved it is implemented."""
+    return PARSER_REGISTRY[name](raw)
 
 
 def _strip_namespace(title: str) -> str:

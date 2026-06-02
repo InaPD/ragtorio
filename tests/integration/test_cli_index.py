@@ -24,7 +24,11 @@ from ragtorio.harvest.models import RawPage
 from ragtorio.harvest.postgres import PostgresHarvestStore
 from ragtorio.index.postgres import ensure_embedding_dimension
 
-DSN = os.environ.get("RAGTORIO_TEST_DSN", "postgresql://ragtorio:ragtorio@localhost:5433/ragtorio")
+#: A database of its own. These tests TRUNCATE, and pointing them at the one
+#: `ragtorio harvest` writes to means a `make test` silently destroys a crawl.
+DSN = os.environ.get(
+    "RAGTORIO_TEST_DSN", "postgresql://ragtorio:ragtorio@localhost:5433/ragtorio_test"
+)
 FIXTURE_DIR = Path(__file__).parents[1] / "fixtures" / "wikitext" / "factorio"
 TABLES = ("chunk", "fact", "raw_category", "raw_redirect", "raw_page", "crawl_run")
 NOW = datetime(2026, 1, 1, tzinfo=UTC)

@@ -27,6 +27,22 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      # Phase 5's four query templates are .cypher files. A test suite that skips
+      # them because no graph is reachable would let a broken query merge.
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: neo4j/ragtorio
+          NEO4J_PLUGINS: '["apoc"]'
+        ports:
+          - 7687:7687
+          - 7474:7474
+        options: >-
+          --health-cmd "wget -q -O /dev/null http://localhost:7474 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+
     steps:
       - uses: actions/checkout@v4
 
@@ -50,8 +66,13 @@ jobs:
 
       # No internet access is needed: every HTTP call is mocked with respx and the
       # wikitext fixtures are committed. The integration tests talk only to the
-      # Postgres service above, and skip themselves if it is not reachable.
+      # services above, and skip themselves if either is unreachable.
+      - name: Create the test database
+        run: |
+          PGPASSWORD=ragtorio psql -h localhost -p 5433 -U ragtorio -d ragtorio \
+            -c "CREATE DATABASE ragtorio_test"
+
       - name: Test
         run: pytest
         env:
-          RAGTORIO_TEST_DSN: postgresql://ragtorio:ragtorio@localhost:5433/ragtorio
+          RAGTORIO_TEST_DSN: postgresql://ragtorio:ragtorio@localhost:5433/ragtorio_test

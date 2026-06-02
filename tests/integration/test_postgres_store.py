@@ -18,7 +18,11 @@ from ragtorio.db.connect import apply_schema, connect
 from ragtorio.harvest.models import CrawlStats, RawPage, RawRedirect
 from ragtorio.harvest.postgres import PostgresHarvestStore, _as_int
 
-DSN = os.environ.get("RAGTORIO_TEST_DSN", "postgresql://ragtorio:ragtorio@localhost:5433/ragtorio")
+#: A database of its own. These tests TRUNCATE, and pointing them at the one
+#: `ragtorio harvest` writes to means a `make test` silently destroys a crawl.
+DSN = os.environ.get(
+    "RAGTORIO_TEST_DSN", "postgresql://ragtorio:ragtorio@localhost:5433/ragtorio_test"
+)
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 #: Spelled out once so test signatures stay readable.

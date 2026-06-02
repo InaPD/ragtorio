@@ -1,0 +1,153 @@
+# Hand-labeled questions for measuring the router, and nothing else.
+#
+# Forty questions, ten per template plus a block the graph cannot answer at all. The
+# mix is deliberate: a set weighted towards clear graph questions would score well and
+# tell you nothing, because the failure that matters is the near-miss - a question that
+# sounds like a recipe lookup but is really about a mechanic, or one that names an item
+# but wants the technology gating it.
+#
+# `intent: both` means either specific intent is acceptable. Those are the genuinely
+# ambiguous questions, and scoring them strictly would punish the router for the
+# caution it is explicitly told to have. A specific label still accepts `both`:
+# retrieving extra costs tokens, not correctness.
+#
+# `template` is only checked where the label names one. A vector question has no
+# template to get right.
+
+questions:
+  # --- recipe_tree: what a thing is made of --------------------------------------
+  - question: what raw ore does one electronic circuit cost
+    intent: graph
+    template: recipe_tree
+  - question: what do I need to craft an assembling machine 2
+    intent: graph
+    template: recipe_tree
+  - question: how much iron plate goes into a rocket silo in total
+    intent: graph
+    template: recipe_tree
+  - question: what are the ingredients of a processing unit
+    intent: graph
+    template: recipe_tree
+  - question: break down a solar panel into raw materials
+    intent: graph
+    template: recipe_tree
+  - question: how many copper plates for 10 green circuits
+    intent: graph
+    template: recipe_tree
+  - question: what goes into making a productivity module 3
+    intent: graph
+    template: recipe_tree
+  - question: full ingredient tree for a nuclear reactor
+    intent: graph
+    template: recipe_tree
+  - question: what is a steel chest made from
+    intent: graph
+    template: recipe_tree
+  - question: raw materials for one express transport belt
+    intent: graph
+    template: recipe_tree
+
+  # --- unlock_chain: what research gates a thing ----------------------------------
+  - question: what research do I need before advanced oil processing
+    intent: graph
+    template: unlock_chain
+  - question: which technology unlocks the assembling machine 3
+    intent: graph
+    template: unlock_chain
+  - question: what do I have to research first to build a rocket silo
+    intent: graph
+    template: unlock_chain
+  - question: what are the prerequisites for kovarex enrichment process
+    intent: graph
+    template: unlock_chain
+  - question: which research chain leads to nuclear power
+    intent: graph
+    template: unlock_chain
+  - question: do I need anything researched before I can make solar panels
+    intent: graph
+    template: unlock_chain
+  - question: what technology comes before logistics 2
+    intent: graph
+    template: unlock_chain
+  - question: what gates the production science pack
+    intent: graph
+    template: unlock_chain
+  - question: research needed to unlock the laser turret
+    intent: graph
+    template: unlock_chain
+  - question: what do I research to get express transport belts
+    intent: graph
+    template: unlock_chain
+
+  # --- consumers_of: what uses a thing --------------------------------------------
+  - question: what uses sulfuric acid
+    intent: graph
+    template: consumers_of
+  - question: what recipes consume petroleum gas
+    intent: graph
+    template: consumers_of
+  - question: what is iron gear wheel used for
+    intent: graph
+    template: consumers_of
+  - question: which things are made out of steel plate
+    intent: graph
+    template: consumers_of
+  - question: what can I do with heavy oil
+    intent: graph
+    template: consumers_of
+  - question: what consumes electronic circuits
+    intent: graph
+    template: consumers_of
+  - question: where is lubricant used
+    intent: graph
+    template: consumers_of
+  - question: what recipes need uranium-235
+    intent: graph
+    template: consumers_of
+  - question: what is copper cable an ingredient in
+    intent: graph
+    template: consumers_of
+  - question: which recipes take plastic bar
+    intent: graph
+    template: consumers_of
+
+  # --- tier_compare: same kind, ordered by a number -------------------------------
+  - question: which intermediate product has the largest stack size
+    intent: graph
+    template: tier_compare
+  - question: compare the ores by mining time
+    intent: graph
+    template: tier_compare
+  - question: what stacks higher, iron plate or copper plate
+    intent: graph
+    template: tier_compare
+  - question: which logistics items have the biggest stack size
+    intent: graph
+    template: tier_compare
+  - question: rank the ores by how long they take to mine
+    intent: graph
+    template: tier_compare
+
+  # --- vector: prose, mechanics, advice -------------------------------------------
+  - question: why does my oil refinery stall when one output backs up
+    intent: vector
+  - question: how does pollution attract biters to my base
+    intent: vector
+  - question: what is the difference between a rail signal and a chain signal
+    intent: vector
+  - question: how do I stop my trains from deadlocking at a junction
+    intent: vector
+  - question: explain how the circuit network reads a chest
+    intent: vector
+
+  # --- both: a fact and the explanation behind it ----------------------------------
+  - question: is it worth using kovarex enrichment, and what does it cost
+    intent: both
+  - question: should I make solid fuel from light oil or petroleum gas
+    intent: both
+  - question: how do modules change what a machine costs to run
+    intent: both
+  - question: what is the most efficient way to produce green circuits at scale
+    intent: both
+  - question: are express belts worth the upgrade over fast belts
+    intent: both

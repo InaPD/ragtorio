@@ -41,7 +41,12 @@ pytestmark = [
 def driver() -> Iterator[Driver]:
     with connect(URI, *AUTH) as d:
         with d.session() as session:
-            session.run("MATCH (n) DETACH DELETE n")
+            session.run(
+                # Scoped to this wiki: a full wipe here would take a real
+                # crawl with it.
+                "MATCH (n) WHERE n.id STARTS WITH $p DETACH DELETE n",
+                p="t:",
+            )
         apply_schema(d)
         yield d
 

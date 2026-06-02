@@ -12,8 +12,9 @@ from dataclasses import dataclass
 
 from neo4j import Driver, Session
 
-#: Kovarex-shaped cycles terminate here rather than recursing forever. 15 levels is
-#: far deeper than any real Factorio recipe chain, so hitting it means a cycle.
+#: A backstop, not the cycle guard. Real cycle detection is the path check in
+#: ``_tree``; this only bounds a chain that is legitimately deep. 15 levels is far
+#: deeper than any real Factorio recipe chain.
 DEFAULT_MAX_DEPTH = 15
 
 _FIND_RECIPE = """
@@ -23,8 +24,16 @@ ORDER BY CASE WHEN r.id = $preferred_id THEN 0 ELSE 1 END, r.id
 LIMIT 1
 """
 
+#: An amount-less CONSUMES edge is skipped rather than assumed to be one unit.
+#: 65 of the Factorio graph's 847 such edges carry no amount: they come from an
+#: item's ``consumers`` field, which states that something consumes it without
+#: saying how much, and they survive the resolver's merge only when the consumer's
+#: own recipe field never produced a quantity to prefer. Multiplying by an invented
+#: 1.0 would put a wrong number in a raw-material total, which is the one thing this
+#: tree exists to get right.
 _INGREDIENTS = """
 MATCH (r {id: $recipe_id})-[c:CONSUMES]->(i)
+WHERE c.amount IS NOT NULL
 RETURN i.title AS title, c.amount AS amount
 ORDER BY i.title
 """
@@ -49,25 +58,51 @@ def recipe_tree(
     quantity: float = 1.0,
     *,
     max_depth: int = DEFAULT_MAX_DEPTH,
+    raw_items: frozenset[str] = frozenset(),
+    recipe_suffix: str = "(recipe)",
 ) -> RecipeTreeNode:
     """The tree for ``quantity`` units of ``item_title``.
 
     When more than one recipe produces the item, the recipe named after the item
     itself wins (the common case: an item's own infobox recipe); otherwise the
     lowest id, so the choice is at least deterministic.
+
+    Ingredients whose edge carries no amount are not traversed; see ``_INGREDIENTS``.
+    ``raw_items`` (casefolded titles) stop the walk regardless of what produces them;
+    see ``ResolutionConfig`` for why water needs to be in it.
     """
     with driver.session() as session:
-        return _tree(session, wiki, item_title, quantity, max_depth)
+        return _tree(
+            session, wiki, item_title, quantity, max_depth, raw=raw_items, suffix=recipe_suffix
+        )
 
 
 def _tree(
-    session: Session, wiki: str, title: str, quantity: float, depth_left: int
+    session: Session,
+    wiki: str,
+    title: str,
+    quantity: float,
+    depth_left: int,
+    on_path: frozenset[str] = frozenset(),
+    raw: frozenset[str] = frozenset(),
+    suffix: str = "(recipe)",
 ) -> RecipeTreeNode:
+    if title.casefold() in raw:
+        return RecipeTreeNode(title=title, amount=quantity, is_raw=True)
+    # An item already on this branch is a cycle, and expanding it again multiplies a
+    # quantity by a chain that leads back to itself. Factorio's fluids are full of
+    # these - sulfuric acid needs water, and water is produced by recipes that need
+    # sulfuric acid - and with only a depth bound to stop it, one processing unit
+    # came out costing twenty million sulfuric acid before the recursion gave up.
+    # Stopping at the repeat reports the item as a leaf, which is what it is: the
+    # amount you need from somewhere other than this branch.
+    if title in on_path:
+        return RecipeTreeNode(title=title, amount=quantity, is_raw=True, truncated=True)
     if depth_left <= 0:
         return RecipeTreeNode(title=title, amount=quantity, is_raw=True, truncated=True)
 
     item_id = f"{wiki}:{title}"
-    preferred_id = f"{wiki}:{title} (recipe)"
+    preferred_id = f"{wiki}:{title} {suffix}"
     row = session.run(_FIND_RECIPE, item_id=item_id, preferred_id=preferred_id).single()
     if row is None:
         return RecipeTreeNode(title=title, amount=quantity, is_raw=True)
@@ -81,7 +116,16 @@ def _tree(
 
     ingredients = list(session.run(_INGREDIENTS, recipe_id=row["recipe_id"]))
     children = tuple(
-        _tree(session, wiki, ing["title"], ing["amount"] * batches, depth_left - 1)
+        _tree(
+            session,
+            wiki,
+            ing["title"],
+            ing["amount"] * batches,
+            depth_left - 1,
+            on_path | {title},
+            raw,
+            suffix,
+        )
         for ing in ingredients
     )
     return RecipeTreeNode(title=title, amount=quantity, is_raw=False, children=children)

@@ -5,9 +5,10 @@ edges pointed at real nodes or logged as unresolved.
 
 - A page that both classifies as an ``Item`` (or ``Fluid``) and carries its own
   recipe becomes two nodes: ``factorio:Title`` (the item) and
-  ``factorio:Title (recipe)`` (the recipe). A page already classified as ``Recipe``
-  needs no split. ``CONSUMES``, ``PRODUCES``, ``CRAFTED_AT`` and the recipe's own
-  ``crafting_time`` belong to the recipe aspect; everything else belongs to the item.
+  ``factorio:Title (recipe)`` (the recipe), the suffix being profile config. A page
+  already classified as ``Recipe`` needs no split. ``CONSUMES``, ``PRODUCES``,
+  ``CRAFTED_AT`` and the recipe's own ``crafting_time`` belong to the recipe aspect;
+  everything else belongs to the item.
 - ``rel.CONSUMED_BY`` (an item's "consumers" field, which carries no amount) is
   rewritten to a ``CONSUMES`` edge from the consumer's recipe aspect, then merged
   with any ``CONSUMES`` edge already produced by that consumer's own ``recipe``
@@ -22,6 +23,17 @@ edges pointed at real nodes or logged as unresolved.
   ``required-technologies`` is present on Item and Recipe pages too, mixing in
   science-pack costs the ontology does not define this edge over. Dropping those is
   a deliberate filter, not something worth logging as unresolved.
+- ``rel.ALLOWS`` (the ``allows`` field) is inverted into ``REQUIRES``: "A allows B"
+  is the same statement as "B requires A", written from the other end. This is where
+  the technology tree actually comes from. The profile originally left ``allows``
+  unmapped on the theory that it duplicated ``required-technologies``; measuring the
+  crawl showed otherwise - not one of 696 ``required-technologies`` entries names a
+  technology, they are all science packs and items, so without ``allows`` the graph
+  had exactly one ``REQUIRES`` edge in it.
+- **A technology is referenced without the suffix its page carries.** ``allows`` says
+  "Flammables"; the page is "Flammables (research)". The profile's
+  ``resolution.reference_suffixes`` lists what to try, so the convention stays in
+  config rather than in this module.
 """
 
 from __future__ import annotations
@@ -54,9 +66,19 @@ _REL_TYPE = {
 
 _VERSION_PART = re.compile(r"\d+")
 
+#: Categories describing the page rather than the thing. Present on hundreds of pages
+#: each, so they would swamp any grouping built on this property.
+_BOOKKEEPING_CATEGORIES = frozenset({"English page", "Infobox page", "Archived"})
 
-def _recipe_id(title: str) -> str:
-    return f"{title} (recipe)"
+
+def _recipe_id(title: str, suffix: str) -> str:
+    """The second node a page gets when it is both an item and a recipe.
+
+    The suffix is profile config rather than a literal here: it is a naming
+    convention, and the same string has to be understood by ``recipe_tree`` when it
+    looks for an item's own recipe.
+    """
+    return f"{title} {suffix}"
 
 
 @dataclass
@@ -85,11 +107,17 @@ class EntityResolver:
         redirects: list[RawRedirect],
         aliases: dict[str, str],
         archived_titles: frozenset[str],
+        categories: dict[str, list[str]] | None = None,
+        reference_suffixes: list[str] | None = None,
+        recipe_suffix: str = "(recipe)",
     ) -> None:
         self._wiki = wiki
         self._facts = facts
         self._archived_titles = archived_titles
         self._titles = TitleCanonicalizer(redirects, aliases)
+        self._categories = categories or {}
+        self._suffixes = list(reference_suffixes or [])
+        self._recipe_suffix = recipe_suffix
 
     def resolve(self) -> ResolvedGraph:
         aspects = self._build_aspects()
@@ -113,7 +141,7 @@ class EntityResolver:
             aspects[title] = _PageAspects(
                 labels=labels,
                 item_id=self._id(title),
-                recipe_id=self._id(_recipe_id(title))
+                recipe_id=self._id(_recipe_id(title, self._recipe_suffix))
                 if needs_split
                 else (self._id(title) if has_recipe_data else None),
             )
@@ -153,7 +181,10 @@ class EntityResolver:
                     ResolvedNode(
                         id=page.recipe_id,
                         labels=("Recipe",),
-                        props={"title": _recipe_id(title), "crafting_time": crafting_time},
+                        props={
+                            "title": _recipe_id(title, self._recipe_suffix),
+                            "crafting_time": crafting_time,
+                        },
                     )
                 )
             elif page.recipe_id is not None:
@@ -164,6 +195,7 @@ class EntityResolver:
                 merged["is_archived"] = title in self._archived_titles
                 merged["introduced_in"] = _introduced_in(page.version_events)
                 merged["aliases"] = self._titles.aliases_of(title)
+                merged["categories"] = self._categories_of(title)
                 nodes.append(ResolvedNode(id=page.item_id, labels=page.labels, props=merged))
             else:
                 nodes.append(self._item_node(title, page))
@@ -175,7 +207,17 @@ class EntityResolver:
         props["is_archived"] = title in self._archived_titles
         props["introduced_in"] = _introduced_in(page.version_events)
         props["aliases"] = self._titles.aliases_of(title)
+        props["categories"] = self._categories_of(title)
         return ResolvedNode(id=page.item_id, labels=page.labels, props=props)
+
+    def _categories_of(self, title: str) -> list[str]:
+        """The wiki's own categories for a title, minus its bookkeeping ones.
+
+        "English page" and "Infobox page" are on almost every page and group nothing a
+        player would recognise, so leaving them in would make ``tier_compare`` return
+        the whole wiki for any seed.
+        """
+        return [c for c in self._categories.get(title, []) if c not in _BOOKKEEPING_CATEGORIES]
 
     # -- pass 3: edges ------------------------------------------------------------
 
@@ -194,6 +236,30 @@ class EntityResolver:
         for fact in self._facts:
             target_title = self._canonical(str(fact.object)) if fact.object is not None else ""
             target = aspects.get(target_title)
+
+            if fact.predicate == "rel.ALLOWS":
+                # "A allows B" is "B requires A". Both ends must be technologies:
+                # `allows` also names archived pages this crawl never classified.
+                follow_on = self._lookup_unlock(aspects, target_title)
+                subject_page = aspects[fact.subject]
+                if follow_on is None or "Unlock" not in subject_page.labels:
+                    if follow_on is None:
+                        unresolved.append(
+                            UnresolvedReference(
+                                subject=fact.subject,
+                                predicate=fact.predicate,
+                                object=target_title,
+                            )
+                        )
+                    continue
+                keep(
+                    ResolvedEdge(
+                        from_id=follow_on.item_id,
+                        rel_type="REQUIRES",
+                        to_id=subject_page.item_id,
+                    )
+                )
+                continue
 
             if fact.predicate == "rel.CONSUMED_BY":
                 # "X is consumed by Y" -> Y's recipe CONSUMES X, no amount known here.
@@ -258,6 +324,18 @@ class EntityResolver:
                 if node.id in station_ids and "Station" not in node.labels:
                     nodes[i] = node.model_copy(update={"labels": (*node.labels, "Station")})
         return edges
+
+    def _lookup_unlock(self, aspects: dict[str, _PageAspects], title: str) -> _PageAspects | None:
+        """Find the ``Unlock`` a reference names, trying the profile's suffixes.
+
+        Only used where an Unlock is what the reference must be, so a suffix can never
+        turn an item reference into a technology by accident.
+        """
+        for candidate in (title, *(f"{title} {suffix}" for suffix in self._suffixes)):
+            page = aspects.get(self._canonical(candidate))
+            if page is not None and "Unlock" in page.labels:
+                return page
+        return None
 
     def _canonical(self, title: str) -> str:
         """The redirect/alias target for a title, or the title itself if it is

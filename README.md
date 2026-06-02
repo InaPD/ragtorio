@@ -9,12 +9,15 @@ research do I need before oil processing* - are answered from a knowledge graph 
 vector index. No model touches the ingestion pipeline, so no edge in the graph is
 hallucinated.
 
-> **Status: Phases 0-4 of 9 complete.** Scaffolding and wiki profile, the harvester,
-> template extraction, entity resolution into a Neo4j graph, and the vector index over
-> article prose. Real routing, grounded answering and the benchmark are not built yet.
-> Phase 4's recall target is still unmeasured with the real embedding model - the
-> pipeline runs end to end and the numbers so far are in
-> [docs/coverage/phase4-index.md](docs/coverage/phase4-index.md).
+> **Status: Phases 0-5 of 9 complete.** Scaffolding and wiki profile, the harvester,
+> template extraction, entity resolution into a Neo4j graph, the vector index over
+> article prose, and routing with the four query templates. Grounded answering, the API
+> and the benchmark are not built yet.
+> Two exit criteria are unmeasured for want of credentials on this machine: Phase 4's
+> recall target needs the local embedding model installed, and Phase 5's router needs
+> an Anthropic key. Everything else is measured -
+> [phase4-index.md](docs/coverage/phase4-index.md),
+> [phase5-retrieval.md](docs/coverage/phase5-retrieval.md).
 > See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 ## Why this wiki is harder than it looks
@@ -74,12 +77,16 @@ ragtorio extract factorio                          # infobox templates -> fact r
 
 ragtorio graph load factorio                        # resolve facts, load into Neo4j
 ragtorio graph check factorio                       # orphans, gaps, self-cycles
-ragtorio ask factorio "raw ore for one electronic circuit" --graph-only
 
 pip install -e ".[embed]"                          # the local embedding model (pulls PyTorch)
 ragtorio index build factorio                      # article prose -> embedded chunks
 ragtorio index recall factorio                     # recall@k on the labeled query set
 ragtorio index recall factorio --ef-search 40,100,200   # pick the HNSW accuracy setting
+
+export ANTHROPIC_API_KEY=...                       # routing only; ingestion needs no key
+ragtorio ask factorio "what raw ore does one electronic circuit cost"
+ragtorio ask factorio "why does my refinery stall" --show-context
+ragtorio route eval factorio --show-failures       # router accuracy on the labeled set
 ```
 
 Copy `.env.example` to `.env` and set `RAGTORIO_CONTACT_EMAIL` before any crawl - wiki operators
@@ -141,8 +148,8 @@ not directly stated by the ontology and worth knowing:
 `recipe_tree` walks an item down to raw materials, multiplying amounts level by level in
 Python. A fractional output amount (uranium processing) is read as a probability, and the
 batches needed are an expected-value calculation - the same reasoning the wiki's own article
-uses. `ragtorio ask --graph-only` is a stopgap: a regex, not real question routing, which is
-Phase 5's job.
+uses. It stops at an item already on the current branch, because Factorio's fluids form
+real cycles and multiplying through one produces a number in the millions.
 
 ## The vector index
 
@@ -189,33 +196,105 @@ machine-generated changelog pages, was 42% of the index on its own, and the buil
 report's mention-coverage number is what surfaced it. Full write-up:
 [docs/coverage/phase4-index.md](docs/coverage/phase4-index.md).
 
-> The integration tests `TRUNCATE` their tables on `RAGTORIO_TEST_DSN`, which defaults
-> to the database `ragtorio harvest` writes to. Point it somewhere else before running
-> `make test` on a machine holding a crawl you want to keep.
+> The integration tests use their own Postgres database (`ragtorio_test`), so a crawl
+> survives `make test`. Neo4j has no equivalent - the community edition is
+> single-database - so the suite still clears the loaded graph. Re-run
+> `ragtorio graph load` after it.
+
+## Routing and retrieval
+
+A question does not announce whether its answer is a join over template data or a
+paragraph somebody wrote, so `ragtorio ask` asks a small model - `claude-haiku-4-5`, one
+call, a few hundred tokens - which halves of the system to consult.
+
+**The model never writes a query.** It returns an intent, one template name from a
+closed enum, and the entity names it thinks the question mentions, all three enforced by
+structured outputs. The four templates are `.cypher` files; everything variable arrives
+as a bound parameter. A model that answers `DROP DATABASE` to the template field gets a
+schema error, not a query.
+
+**Every entity is resolved against the graph before any parameter is bound** - exact
+title, then the aliases Phase 3 built from redirects and community shorthand, then a
+full-text search whose terms are all required. A hallucinated entity fails visibly, as
+an unresolved mention, rather than matching nothing inside a query and returning an
+empty result that reads as "the wiki does not say".
+
+**Low confidence widens to `both`** rather than failing. A wrong template answers a
+different question convincingly; one extra query costs a few hundred tokens. So does a
+graph route whose entities all failed to resolve, or one the model gave no template for.
+
+The four templates, and what the graph had to learn to answer them:
+
+| Template | Question shape |
+|---|---|
+| `recipe_tree` | what a thing is made of, down to raw materials, amounts multiplied level by level |
+| `unlock_chain` | the research that gates an item, a recipe or a technology, and its prerequisite chain |
+| `consumers_of` | what uses a given item, with amounts and the machines that do it |
+| `tier_compare` | things sharing a wiki category, ordered by a numeric property |
+
+Retrieved context comes back as **labeled blocks**, not one wall of text: a graph fact
+was a template parameter somebody typed into an infobox, a passage is prose that may be
+stale, and Phase 6's prompt can say which is which. When the token budget binds,
+passages are dropped from the bottom and graph facts never are - a truncated recipe tree
+is a wrong answer, one fewer passage is not. Every question, its route and the chunk ids
+it retrieved land in `routing_log`.
+
+Running the templates against real data found three things the code alone did not:
+`recipe_tree` crashed on ingredients with no stated amount and exploded to twenty
+million sulfuric acid on Factorio's fluid cycles, and `unlock_chain` had exactly **one**
+edge to walk, because the field that reads like a prerequisite list contains science
+packs and the one Phase 0 dismissed contains the technology tree. All three are fixed
+and written up in [phase5-retrieval.md](docs/coverage/phase5-retrieval.md), with the
+twelve template checks and the router's still-unmeasured accuracy.
 
 ## Adding a wiki
 
-A wiki is described by one YAML file in [`wikis/`](wikis/), validated on load. Nothing in
-`src/` is Factorio-specific.
+A wiki is described by one YAML file in [`wikis/`](wikis/), validated on load.
 
 ```bash
 ragtorio probe https://example.wiki/api.php     # what does it run, and is the data real?
-cp wikis/factorio.yaml wikis/newwiki.yaml # edit namespaces, fields, type map
+cp wikis/factorio.yaml wikis/newwiki.yaml       # edit namespaces, fields, type map
 ragtorio profile newwiki                        # fails loudly on a typo
 ```
 
-If the new wiki's infobox grammar differs, add one pure function to
-`extract/parsers/` and name it in the profile; construction fails immediately if a
-profile names a parser that has no implementation registered.
+The profile carries everything that differs between wikis: the API and rate limit, which
+namespaces to crawl and how translations are marked, whether the infobox is a page of its
+own or a template **inline in the article**, which fields become which facts and through
+which parser, how a page's type maps onto the ontology's labels, what suffix the split
+recipe node takes, which titles are raw materials whatever the graph says, which
+properties `tier_compare` may order by, and how article prose is chunked. If the new
+wiki's infobox grammar differs, add one pure function to `extract/parsers/` and name it
+in the profile; a profile naming a parser that does not exist fails when it loads.
+
+**This claim went five phases untested**, because `wikis/` held exactly one profile, and
+five things turned out to be false. `location: inline` - the layout most wikis use, and
+the one Factorio does *not* - was accepted by the schema and rejected by the extractor.
+The `recipe` target ran Factorio's parser whatever the profile named. Four of seven
+declared parser names had no implementation, so they read as an extension point and
+behaved as a list of good intentions. The `(recipe)` node suffix was a literal in two
+modules. And the properties a tier comparison may order by were a constant naming
+Factorio's three fields, in the middle of the retrieval layer.
+
+All five are fixed, and
+[`tests/unit/test_second_wiki.py`](tests/unit/test_second_wiki.py) is the guard: a
+profile that shares no vocabulary with Factorio - inline infoboxes in namespace 100, a
+`Thingbox` template, `durability` and `weight`, a `[formula]` recipe suffix - driven
+through config, extraction and entity resolution. The ontology itself stays fixed
+(`Item`/`Fluid`/`Recipe`/`Station`/`Unlock`, six relationship types, four templates);
+that is the project's scope, not an oversight. A wiki about films would not fit and
+should not.
+
+What is still untested is a *real* second wiki. A synthetic profile proves the seam
+exists; it does not prove any actual wiki fits through it.
 
 ## Layout
 
 ```
 wikis/factorio.yaml          the whole Factorio-specific surface
 src/ragtorio/
-  cli.py                     probe | profile | init-db | harvest | extract | graph | index | ask
+  cli.py                     probe | profile | init-db | harvest | extract | graph | index | route | ask
   config.py                  profile schema and loader, validated with pydantic
-  db/schema.sql              raw_page, raw_redirect, raw_category, crawl_run, fact, chunk
+  db/schema.sql              raw_page, raw_redirect, raw_category, crawl_run, fact, chunk, routing_log
   db/neo4j.py                driver + schema application, mirrors db/connect.py
   harvest/client.py          rate-limited, retrying MediaWiki client
   harvest/probe.py           installed-versus-populated structured-data check
@@ -240,8 +319,17 @@ src/ragtorio/
   index/store.py             where chunks go, plus an exact-search in-memory one
   index/postgres.py          pgvector + HNSW, and the column resize a provider swap needs
   index/recall.py            recall@k on the labeled set, and the ef_search sweep
+  retrieve/router.py         one haiku call: intent, template, entities, all schema-bound
+  retrieve/entities.py       mention -> node id, by title, alias, then full-text search
+  retrieve/cypher/           the query templates, as files, parameters only
+  retrieve/graph.py          runs one named template and renders its rows
+  retrieve/vector.py         top-k passages, narrowed by the route's own entities
+  retrieve/merge.py          labeled context blocks under a token budget
+  retrieve/pipeline.py       question -> route -> both halves -> merged context
+  retrieve/evaluate.py       router accuracy on the labeled question set
 wikis/factorio.aliases.yaml  community shorthand ("green circuit", "blue science")
 wikis/factorio.recall.yaml   30 hand-labeled queries the vector index is measured on
+wikis/factorio.routing.yaml  45 hand-labeled questions the router is measured on
 tests/fixtures/wikitext/     committed wikitext, so extraction tests need no network
 docs/coverage/               what the wiki actually contains
 scripts/                     one-off Phase 0 measurement tools

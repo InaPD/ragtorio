@@ -35,6 +35,17 @@ class GraphSourceRepository(Protocol):
         ``Category:Archived`` - the ``Category:`` prefix is assumed English)."""
         ...
 
+    def categories_by_title(self, wiki: str) -> dict[str, list[str]]:
+        """Every page's categories, bare names, keyed by title.
+
+        Phase 5's ``tier_compare`` is "items sharing a category, ordered by a numeric
+        property", so the category has to be on the node: it is the only grouping the
+        wiki gives that a player would recognise ("Intermediate products",
+        "Logistics"), and recomputing it from Postgres at query time would put a
+        second database in the path of a Cypher template.
+        """
+        ...
+
 
 class PostgresGraphSourceRepository:
     """Reads ``fact``, ``raw_redirect``, ``raw_page`` and ``raw_category``."""
@@ -108,3 +119,21 @@ class PostgresGraphSourceRepository:
                 (wiki, f"Category:{category}"),
             )
             return frozenset(str(row[0]) for row in cur.fetchall())
+
+    def categories_by_title(self, wiki: str) -> dict[str, list[str]]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT rp.title, rc.category FROM raw_page rp
+                JOIN raw_category rc ON rc.wiki = rp.wiki AND rc.page_id = rp.page_id
+                WHERE rp.wiki = %s
+                ORDER BY rp.title, rc.category
+                """,
+                (wiki,),
+            )
+            rows = cur.fetchall()
+        grouped: dict[str, list[str]] = {}
+        for title, category in rows:
+            name = str(category).removeprefix("Category:")
+            grouped.setdefault(str(title), []).append(name)
+        return grouped

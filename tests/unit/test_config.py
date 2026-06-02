@@ -15,6 +15,7 @@ import yaml
 from pydantic import ValidationError
 
 from ragtorio.config import (
+    KNOWN_PARSERS,
     InfoboxConfig,
     Settings,
     TypeRule,
@@ -40,6 +41,25 @@ def test_crawl_namespaces_includes_extras_and_archive(
     assert profile.crawl_namespaces == [0, 3002, 3004]
 
 
+def test_the_recipe_target_must_name_a_parser(minimal_profile_data: dict[str, Any]) -> None:
+    """Recipe grammar is the thing that differs most between wikis. The sentinel used
+    to fall back to Factorio's parser whatever the profile said, which meant a second
+    wiki could declare its own and be silently ignored."""
+    data = {
+        **minimal_profile_data,
+        "infobox": {**minimal_profile_data["infobox"], "fields": {"recipe": {"to": "recipe"}}},
+    }
+    with pytest.raises(ValidationError, match="needs a parser"):
+        WikiProfile.model_validate(data)
+
+
+def test_known_parsers_is_exactly_what_is_implemented() -> None:
+    """It was a hand-written list and four of its seven names had no implementation."""
+    from ragtorio.extract.parsers import PARSER_REGISTRY
+
+    assert frozenset(PARSER_REGISTRY) == KNOWN_PARSERS
+
+
 @pytest.mark.parametrize(
     ("target", "ok"),
     [
@@ -55,7 +75,9 @@ def test_field_mapping_target_grammar(
     minimal_profile_data: dict[str, Any], target: str, ok: bool
 ) -> None:
     data = copy.deepcopy(minimal_profile_data)
-    data["infobox"]["fields"] = {"x": {"to": target}}
+    # The recipe target additionally requires a parser; that rule has its own test.
+    parser = {"parser": "factorio_recipe_expr"} if target == "recipe" else {}
+    data["infobox"]["fields"] = {"x": {"to": target, **parser}}
     if ok:
         assert WikiProfile.model_validate(data)
     else:
@@ -187,7 +209,14 @@ class TestShippedFactorioProfile:
         # 96 distinct prototype-type values were measured across 553 pages.
         assert len(load_profile("factorio").infobox.type_map) == 96
 
-    def test_technology_unlocks_come_from_effects_not_allows(self) -> None:
+    def test_technology_unlocks_come_from_effects(self) -> None:
+        assert load_profile("factorio").infobox.fields["effects"].to == "rel.UNLOCKS"
+
+    def test_the_technology_tree_comes_from_allows(self) -> None:
+        """Phase 0 read `allows` as the inverse of `required-technologies` and left it
+        unmapped. The crawl disagrees: none of required-technologies' 696 entries names
+        a technology, so without `allows` the graph has one REQUIRES edge in it."""
         fields = load_profile("factorio").infobox.fields
-        assert fields["effects"].to == "rel.UNLOCKS"
-        assert "allows" not in fields, "allows is the inverse of required-technologies"
+        assert fields["allows"].to == "rel.ALLOWS"
+        assert fields["allows"].parser == "leveled_name_list"
+        assert load_profile("factorio").resolution.reference_suffixes == ["(research)"]
