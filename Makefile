@@ -1,4 +1,4 @@
-.PHONY: help venv install lint typecheck test test-unit check up down fixtures harvest extract graph
+.PHONY: help venv install install-embed lint typecheck test test-unit check up down fixtures harvest extract graph index
 
 VENV := .venv
 PY   := $(VENV)/bin/python
@@ -13,6 +13,9 @@ venv:            ## create the virtualenv
 install: venv    ## install the package and dev dependencies
 	$(PIP) install -q --upgrade pip
 	$(PIP) install -q -e ".[dev]"
+
+install-embed:   ## add the local embedding model (pulls PyTorch, ~2GB)
+	$(PIP) install -q -e ".[embed]"
 
 lint:            ## ruff check + format check
 	$(VENV)/bin/ruff check src tests scripts
@@ -47,3 +50,7 @@ extract:         ## turn crawled infobox templates into fact rows (needs `make h
 graph:           ## resolve facts and load them into Neo4j (needs `make extract` first)
 	$(VENV)/bin/ragtorio graph load factorio
 	$(VENV)/bin/ragtorio graph check factorio
+
+index:           ## chunk and embed articles, then measure recall (needs `make install-embed`)
+	$(VENV)/bin/ragtorio index build factorio
+	$(VENV)/bin/ragtorio index recall factorio

@@ -166,6 +166,35 @@ infobox:
     cost: { to: rel.COSTS, parser: factorio_recipe_expr }
     required-technologies: { to: rel.REQUIRES, parser: plus_list }
 
+# Phase 4: how article prose becomes retrievable chunks.
+index:
+  # Mainspace only. Archived content lives in namespace 3004 and is deliberately
+  # left out: serving a removed item's article as current is the single most
+  # damaging thing this index could do.
+  namespace_id: 0
+  max_tokens: 800
+  min_chars: 80
+
+  # This wiki names an entity with {{Icon|Crude oil|100}} far more often than it
+  # links one, so a links-only reading of a section would miss most of what it is
+  # about. {{icontech}} is the same template for technologies.
+  mention_templates: [Icon, icontech]
+
+  # 23 changelog pages produced 42% of the first index built here: machine-generated
+  # release notes, no links, and no answer to any question a player asks. The
+  # version a thing was introduced in is already a node property from {{history}}.
+  exclude_title_prefixes:
+    - Version history
+
+  # Headings whose content is links and version numbers rather than prose. The
+  # history a page carries is already extracted as version events in Phase 2.
+  drop_sections:
+    - See also
+    - History
+    - References
+    - Gallery
+    - External links
+
 inline_templates:
   history:
     to: version_event

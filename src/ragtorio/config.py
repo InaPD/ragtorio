@@ -217,6 +217,45 @@ class InfoboxConfig(BaseModel):
         return None
 
 
+class IndexConfig(BaseModel):
+    """How article prose becomes retrievable chunks.
+
+    Everything here is wiki grammar rather than policy: which namespace holds the
+    articles, which templates name an entity inline (Factorio writes
+    ``{{Icon|Crude oil|100}}`` far more often than it links crude oil), and which
+    templates and sections are navigation furniture that would only dilute a chunk.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    namespace_id: int = 0
+    max_tokens: int = Field(default=800, ge=100, le=4000)
+    min_chars: int = Field(default=80, ge=0)
+    mention_templates: list[str] = Field(default_factory=list)
+    drop_sections: list[str] = Field(default_factory=list)
+    exclude_title_prefixes: list[str] = Field(default_factory=list)
+
+    @property
+    def mention_template_names(self) -> frozenset[str]:
+        """Mention templates, casefolded: the wiki writes both ``{{Icon}}`` and ``{{icon}}``."""
+        return frozenset(name.casefold() for name in self.mention_templates)
+
+    @property
+    def dropped_section_names(self) -> frozenset[str]:
+        """Section headings to skip, casefolded."""
+        return frozenset(name.casefold() for name in self.drop_sections)
+
+    def excludes(self, title: str) -> bool:
+        """Whether a page is excluded from the index by its title.
+
+        A last resort, for whole pages that are structurally not prose: a wiki's
+        changelog archive is machine-generated, enormous, and answers no question a
+        player asks. Prefixes rather than exact titles because these always come as a
+        family (``Version history/1.1.0``, ``/1.2.0``, ...).
+        """
+        return any(title.startswith(prefix) for prefix in self.exclude_title_prefixes)
+
+
 class GroundTruth(BaseModel):
     """Where the authoritative game data for benchmarking lives."""
 
@@ -234,6 +273,7 @@ class WikiProfile(BaseModel):
     wiki: WikiMeta
     infobox: InfoboxConfig
     inline_templates: dict[str, InlineTemplate] = Field(default_factory=dict)
+    index: IndexConfig = IndexConfig()
     ground_truth: GroundTruth | None = None
 
     @property

@@ -33,6 +33,7 @@ from typing import Any
 
 from ragtorio.extract.models import Fact
 from ragtorio.harvest.models import RawRedirect
+from ragtorio.ontology.canonical import TitleCanonicalizer
 from ragtorio.ontology.models import ResolvedEdge, ResolvedGraph, ResolvedNode, UnresolvedReference
 
 #: Facts that belong to a page's recipe aspect rather than its item aspect.
@@ -88,13 +89,7 @@ class EntityResolver:
         self._wiki = wiki
         self._facts = facts
         self._archived_titles = archived_titles
-        # Every alias/redirect source, in its original display casing, plus the
-        # case-insensitive lookup key used to actually resolve one.
-        sources: dict[str, str] = {r.from_title: r.to_title for r in redirects} | dict(aliases)
-        self._alias_target = {source.casefold(): target for source, target in sources.items()}
-        self._aliases_of: dict[str, list[str]] = defaultdict(list)
-        for source, target in sources.items():
-            self._aliases_of[target].append(source)
+        self._titles = TitleCanonicalizer(redirects, aliases)
 
     def resolve(self) -> ResolvedGraph:
         aspects = self._build_aspects()
@@ -168,7 +163,7 @@ class EntityResolver:
                 merged.setdefault("title", title)
                 merged["is_archived"] = title in self._archived_titles
                 merged["introduced_in"] = _introduced_in(page.version_events)
-                merged["aliases"] = sorted(self._aliases_of.get(title, []))
+                merged["aliases"] = self._titles.aliases_of(title)
                 nodes.append(ResolvedNode(id=page.item_id, labels=page.labels, props=merged))
             else:
                 nodes.append(self._item_node(title, page))
@@ -179,7 +174,7 @@ class EntityResolver:
         props.setdefault("title", title)
         props["is_archived"] = title in self._archived_titles
         props["introduced_in"] = _introduced_in(page.version_events)
-        props["aliases"] = sorted(self._aliases_of.get(title, []))
+        props["aliases"] = self._titles.aliases_of(title)
         return ResolvedNode(id=page.item_id, labels=page.labels, props=props)
 
     # -- pass 3: edges ------------------------------------------------------------
@@ -267,7 +262,7 @@ class EntityResolver:
     def _canonical(self, title: str) -> str:
         """The redirect/alias target for a title, or the title itself if it is
         already canonical (or unknown)."""
-        return self._alias_target.get(title.casefold(), title)
+        return self._titles.canonical(title)
 
     def _id(self, title: str) -> str:
         return f"{self._wiki}:{self._canonical(title)}"

@@ -79,3 +79,46 @@ CREATE TABLE IF NOT EXISTS fact (
 
 CREATE INDEX IF NOT EXISTS fact_wiki_subject_idx ON fact (wiki, subject);
 CREATE INDEX IF NOT EXISTS fact_wiki_predicate_idx ON fact (wiki, predicate);
+
+-- Phase 4: the vector index. pgvector ships in the compose image; the extension is
+-- created here so a hand-rolled Postgres fails on this line rather than three
+-- statements later with a confusing "type vector does not exist".
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- One row per retrievable passage. A run replaces every chunk for the wiki, for the
+-- same reason a run replaces its facts: everything here is recomputable from
+-- raw_page, so after a chunker or embedding-model change the old rows are wrong
+-- rather than merely stale.
+--
+-- `title` is denormalised from raw_page deliberately. Every citation renders as
+-- index.php?title=X&oldid=N, so the title is needed on every single retrieved row,
+-- and a join to fetch it would buy nothing but the chance of the two disagreeing.
+--
+-- The column is vector(768) because the default provider is bge-base-en-v1.5. Vector
+-- width belongs to the provider, not to the schema; `ragtorio index build` widens or
+-- narrows this column when a different provider is selected.
+CREATE TABLE IF NOT EXISTS chunk (
+    chunk_id             text        PRIMARY KEY,
+    wiki                 text        NOT NULL,
+    page_id              bigint      NOT NULL,
+    title                text        NOT NULL,
+    revision_id          bigint      NOT NULL,
+    section_path         text[]      NOT NULL DEFAULT '{}',
+    text                 text        NOT NULL,
+    embedding            vector(768) NOT NULL,
+    mentioned_entity_ids text[]      NOT NULL DEFAULT '{}',
+    indexed_at           timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS chunk_wiki_idx ON chunk (wiki);
+CREATE INDEX IF NOT EXISTS chunk_page_idx ON chunk (wiki, page_id);
+
+-- Approximate nearest neighbour. Cosine, matching the normalised vectors every
+-- provider emits; build-time defaults (m=16, ef_construction=64) are pgvector's own,
+-- and query-time accuracy is tuned per query with hnsw.ef_search rather than baked in
+-- here - which is what `ragtorio index recall --sweep` measures.
+CREATE INDEX IF NOT EXISTS chunk_embedding_idx ON chunk USING hnsw (embedding vector_cosine_ops);
+
+-- Phase 5 filters retrieval by the entities its router resolved, which is a
+-- containment test over an array: GIN, not btree.
+CREATE INDEX IF NOT EXISTS chunk_entities_idx ON chunk USING gin (mentioned_entity_ids);

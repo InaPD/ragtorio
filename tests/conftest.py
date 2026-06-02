@@ -110,9 +110,9 @@ def factorio_responder() -> Callable[[httpx.Request], httpx.Response]:
         params = request.url.params
         if params.get("meta") == "siteinfo":
             return httpx.Response(200, json={"query": {"languages": [{"code": "de"}]}})
-        if params.get("gapfilterredir") == "redirects":
-            pairs = [{"from": "Green circuit", "to": "Iron plate"}]
-            return httpx.Response(200, json={"query": {"redirects": pairs}})
+        if params.get("prop") == "redirects":
+            pages = [{"title": "Iron plate", "redirects": [{"title": "Green circuit"}]}]
+            return httpx.Response(200, json={"query": {"pages": pages}})
         if params.get("generator") == "allpages":
             if params["gapnamespace"] != "0":
                 return httpx.Response(200, json={"query": {"pages": []}})

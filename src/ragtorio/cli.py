@@ -1,9 +1,9 @@
 """Command-line entry point.
 
 Phase 0 shipped ``probe`` and ``profile``; Phase 1 added ``init-db`` and ``harvest``;
-Phase 2 added ``extract``; Phase 3 adds ``graph load``/``graph check`` and a
-``--graph-only`` stopgap for ``ask``. Later phases add the vector index, real
-routing and the benchmark.
+Phase 2 added ``extract``; Phase 3 added ``graph load``/``graph check`` and a
+``--graph-only`` stopgap for ``ask``; Phase 4 adds ``index build``/``index recall``.
+Later phases add real routing, grounded answering and the benchmark.
 """
 
 from __future__ import annotations
@@ -31,6 +31,12 @@ from ragtorio.harvest.postgres import PostgresHarvestStore
 from ragtorio.harvest.probe import ProbeResult
 from ragtorio.harvest.probe import probe as run_probe
 from ragtorio.harvest.store import HarvestStore, InMemoryHarvestStore
+from ragtorio.index.build import IndexReport, build_index
+from ragtorio.index.embed import EmbeddingProvider, build_provider
+from ragtorio.index.postgres import PostgresChunkStore, ensure_embedding_dimension
+from ragtorio.index.recall import RecallReport, evaluate, load_queries, sweep
+from ragtorio.index.repository import PostgresChunkSourceRepository
+from ragtorio.index.store import ChunkStore
 from ragtorio.ontology.aliases import load_aliases
 from ragtorio.ontology.check import GraphCheckReport, check_graph
 from ragtorio.ontology.load import GraphLoader
@@ -46,6 +52,8 @@ app = typer.Typer(
 )
 graph_app = typer.Typer(help="Load facts into Neo4j and check the result.")
 app.add_typer(graph_app, name="graph")
+index_app = typer.Typer(help="Chunk articles into a vector index and measure its recall.")
+app.add_typer(index_app, name="index")
 console = Console()
 
 VERDICT_STYLE = {
@@ -185,6 +193,89 @@ def graph_check(
     with _neo4j(settings, neo4j_uri) as driver:
         report = check_graph(driver, resolved.unresolved)
     _render_check(report)
+
+
+@index_app.command(name="build")
+def index_build(
+    wiki_id: str = typer.Argument(..., help="Profile id, e.g. 'factorio'."),
+    limit: int | None = typer.Option(None, help="Stop after this many articles."),
+    provider: str = typer.Option(
+        "sentence-transformers", help="sentence-transformers | voyage | hashing."
+    ),
+    model: str | None = typer.Option(None, help="Model name. Defaults to the provider's."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Chunk and embed, write nothing."),
+    dsn: str | None = typer.Option(None, help="Postgres DSN. Defaults to RAGTORIO_POSTGRES_DSN."),
+) -> None:
+    """Split a wiki's articles into chunks, embed them, and store them in pgvector.
+
+    Reads ``raw_page`` (already there from ``ragtorio harvest``) and replaces every
+    chunk stored for this wiki, since a chunk is always recomputable from the raw
+    crawl. Entity mentions are filtered against the titles that produced facts, so
+    running ``ragtorio extract`` first gives a more useful index.
+    """
+    profile_data = _load_profile_or_exit(wiki_id)
+    embedder = _build_provider_or_exit(provider, model)
+
+    with connect(dsn or Settings().postgres_dsn) as conn:
+        apply_schema(conn)
+        source = PostgresChunkSourceRepository(conn)
+        result = build_index(
+            profile_data, source, embedder, limit=limit, progress=lambda msg: console.print(msg)
+        )
+        _render_index_report(result.report)
+
+        if dry_run:
+            console.print("[yellow]dry run[/] nothing was written")
+            return
+
+        if ensure_embedding_dimension(conn, embedder.dimensions):
+            console.print(f"chunk.embedding resized to vector({embedder.dimensions})")
+        store: ChunkStore = PostgresChunkStore(conn)
+        store.replace_all(wiki_id, result.chunks)
+        console.print(f"wrote {store.count(wiki_id):,} chunks")
+
+
+@index_app.command(name="recall")
+def index_recall(
+    wiki_id: str = typer.Argument(..., help="Profile id, e.g. 'factorio'."),
+    provider: str = typer.Option(
+        "sentence-transformers", help="Must match the provider the index was built with."
+    ),
+    model: str | None = typer.Option(None, help="Model name. Defaults to the provider's."),
+    ef_search: str | None = typer.Option(
+        None, "--ef-search", help="Comma-separated hnsw.ef_search values to compare, e.g. 40,100."
+    ),
+    show_misses: bool = typer.Option(False, "--show-misses", help="List every query that missed."),
+    dsn: str | None = typer.Option(None, help="Postgres DSN. Defaults to RAGTORIO_POSTGRES_DSN."),
+) -> None:
+    """Measure recall@k against the wiki's hand-labeled query set.
+
+    With ``--ef-search`` this sweeps the HNSW accuracy setting, which is how the value
+    to use in production gets chosen: recall rises and latency with it, and the right
+    trade-off is a property of this index rather than a number to copy.
+    """
+    embedder = _build_provider_or_exit(provider, model)
+    try:
+        queries = load_queries(wiki_id)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
+
+    with connect(dsn or Settings().postgres_dsn) as conn:
+        apply_schema(conn)
+        store: ChunkStore = PostgresChunkStore(conn)
+        if store.count(wiki_id) == 0:
+            console.print(f"[red]no chunks stored for {wiki_id}[/] - run `ragtorio index build`")
+            raise typer.Exit(code=1)
+        indexed = store.titles(wiki_id)
+        if ef_search:
+            reports = sweep(
+                store, embedder, wiki_id, queries, _int_list(ef_search), indexed_titles=indexed
+            )
+            _render_sweep(reports)
+            return
+        report = evaluate(store, embedder, wiki_id, queries, indexed_titles=indexed)
+    _render_recall(report, show_misses)
 
 
 #: Crude, temporary question parsing. Real routing (entity extraction through an
@@ -381,6 +472,89 @@ def _render_check(report: GraphCheckReport) -> None:
         console.print(f"\n[yellow]orphans[/] ({len(report.orphans)}, showing up to 10)")
         for node_id in report.orphans[:10]:
             console.print(f"  {node_id}")
+    console.print()
+
+
+def _build_provider_or_exit(provider: str, model: str | None) -> EmbeddingProvider:
+    """Construct an embedding provider, turning a bad name or a missing dependency
+    into a clean exit rather than a traceback."""
+    try:
+        return build_provider(provider, model)
+    except (ValueError, RuntimeError) as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
+
+
+def _int_list(raw: str) -> list[int]:
+    """Parse a comma-separated option like ``40,100,200``."""
+    try:
+        return [int(part) for part in raw.split(",") if part.strip()]
+    except ValueError as exc:
+        console.print(f"[red]expected comma-separated integers, got[/] {raw!r}")
+        raise typer.Exit(code=1) from exc
+
+
+def _render_index_report(report: IndexReport) -> None:
+    """Print what one index build produced."""
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_row("provider", f"{report.provider} ({report.dimensions} dims)")
+    table.add_row("articles seen", f"{report.pages_seen:,}")
+    table.add_row("excluded by title", f"{report.pages_excluded:,}")
+    table.add_row("articles yielding nothing", f"{report.pages_without_chunks:,}")
+    table.add_row("chunks", f"{report.chunks:,}")
+    table.add_row("mean chunk size", f"~{report.mean_tokens:.0f} tokens")
+    table.add_row("chunks naming an entity", f"{report.mention_coverage:.1%}")
+    console.print(table)
+    console.print()
+
+
+def _render_recall(report: RecallReport, show_misses: bool) -> None:
+    """Print the recall report the Phase 4 exit criterion is checked against."""
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_row("provider", report.provider)
+    table.add_row("queries scored", f"{len(report.scored):,}")
+    for k, value in report.recalls.items():
+        style = "green" if k == 10 and report.meets_target else "default"
+        table.add_row(f"recall@{k}", f"[{style}]{value:.1%}[/]")
+    table.add_row("latency", f"p50 {report.p50_ms:.0f} ms, p95 {report.p95_ms:.0f} ms")
+    console.print(table)
+
+    verdict = "[green]meets[/]" if report.meets_target else "[yellow]below[/]"
+    console.print(f"\n{verdict} the Phase 4 target of 90% recall@10")
+
+    if report.unlabeled:
+        console.print(
+            f"\n[yellow]{len(report.unlabeled)} queries not scored[/] "
+            "(no labeled page is in the index - fix the label or the crawl)"
+        )
+        for outcome in report.unlabeled:
+            console.print(f"  {outcome.query}  ->  {list(outcome.relevant)}")
+
+    if show_misses and report.misses:
+        console.print(f"\n[bold]misses[/] ({len(report.misses)})")
+        for outcome in report.misses:
+            console.print(f"  {outcome.query}")
+            console.print(f"    wanted:    {list(outcome.relevant)}")
+            console.print(f"    retrieved: {list(dict.fromkeys(outcome.retrieved))}")
+    console.print()
+
+
+def _render_sweep(reports: list[RecallReport]) -> None:
+    """Print recall against latency for each ``ef_search``, which is how one is chosen."""
+    table = Table(box=None, pad_edge=False)
+    table.add_column("ef_search", justify="right")
+    table.add_column("recall@10", justify="right")
+    table.add_column("p50 ms", justify="right")
+    table.add_column("p95 ms", justify="right")
+    for report in reports:
+        style = "green" if report.meets_target else "yellow"
+        table.add_row(
+            str(report.ef_search),
+            f"[{style}]{report.recall_at(10):.1%}[/]",
+            f"{report.p50_ms:.0f}",
+            f"{report.p95_ms:.0f}",
+        )
+    console.print(table)
     console.print()
 
 

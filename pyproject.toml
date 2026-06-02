@@ -23,6 +23,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The local embedding model, and the ~2GB of PyTorch behind it. Optional because
+# only `ragtorio index build` needs it: the chunker, the store and the recall
+# harness all run without it, so CI stays light and a clone stays cheap.
+embed = [
+    "sentence-transformers>=3.0",
+]
 dev = [
     "ruff>=0.6",
     "mypy>=1.11",
@@ -63,6 +69,11 @@ packages = ["ragtorio"]
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
+
+# Optional, and ships no stubs. Only index/embed.py imports it, lazily.
+[[tool.mypy.overrides]]
+module = ["sentence_transformers.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

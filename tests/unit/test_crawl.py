@@ -90,9 +90,20 @@ class FakeWiki:
             return self._json({"languages": [{"code": c} for c in self.languages]})
         if params.get("generator") == "allpages":
             namespace = int(params["gapnamespace"])
-            if params.get("gapfilterredir") == "redirects":
-                pairs = self.redirects.get(namespace, [])
-                return self._json({"redirects": [{"from": f, "to": t} for f, t in pairs]})
+            if params.get("prop") == "redirects":
+                # The API hangs the pages pointing at a page off that page, so the
+                # fake groups its (from, to) pairs by target the same way.
+                by_target: dict[str, list[dict[str, str]]] = {}
+                for source, target in self.redirects.get(namespace, []):
+                    by_target.setdefault(target, []).append({"title": source})
+                return self._json(
+                    {
+                        "pages": [
+                            {"title": target, "redirects": sources}
+                            for target, sources in by_target.items()
+                        ]
+                    }
+                )
             self.catalogue_requests += 1
             listed = [p.stub() for p in self.pages if p.ns == namespace]
             return self._json({"pages": listed})
@@ -557,10 +568,13 @@ def test_malformed_redirect_entries_are_skipped(mainspace_only: WikiProfile) -> 
                 200,
                 json={
                     "query": {
-                        "redirects": [
-                            {"from": "Green circuit"},
-                            {"to": "Iron plate"},
-                            {"from": "Red belt", "to": "Fast transport belt"},
+                        "pages": [
+                            {"title": "Iron plate", "redirects": [{"ns": 0}]},
+                            {"redirects": [{"title": "Green circuit"}]},
+                            {
+                                "title": "Fast transport belt",
+                                "redirects": [{"title": "Red belt"}],
+                            },
                         ]
                     }
                 },
@@ -572,6 +586,33 @@ def test_malformed_redirect_entries_are_skipped(mainspace_only: WikiProfile) -> 
 
     assert stats.redirects == 1
     assert ("factorio", "Red belt") in store.redirects
+
+
+@respx.mock
+def test_a_redirect_pointing_at_a_translated_page_is_dropped(
+    mainspace_only: WikiProfile,
+) -> None:
+    """Its target was never crawled, so the alias would dangle."""
+    respx.get(API).mock(
+        side_effect=[
+            catalogue_of(),
+            httpx.Response(
+                200,
+                json={
+                    "query": {
+                        "pages": [
+                            {
+                                "title": "Eisenplatte/de",
+                                "redirects": [{"title": "Iron plate/de"}],
+                            }
+                        ]
+                    }
+                },
+            ),
+        ]
+    )
+    store = InMemoryHarvestStore()
+    assert make_crawler(mainspace_only, store).run().redirects == 0
 
 
 @respx.mock

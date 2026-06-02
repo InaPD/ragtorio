@@ -1,0 +1,110 @@
+# Hand-labeled queries for measuring the vector index, and nothing else.
+#
+# These are deliberately the questions the *graph* cannot answer. "What does an
+# electronic circuit consume" is a join over template data and belongs to a Cypher
+# template; "why does my refinery stall when one output backs up" is a paragraph
+# somebody wrote, and if the vector index cannot find that paragraph then the hybrid
+# has no second half. Labelling recipe lookups here would measure the wrong component
+# and flatter it.
+#
+# `relevant` lists the pages whose prose answers the question; a query counts as a hit
+# when any of them appears in the top k. Several are listed where the wiki genuinely
+# splits an answer across articles - "how do construction robots get materials" is
+# answered by both Roboport and Logistic network, and preferring one would be a
+# judgement about the wiki's organisation rather than about retrieval.
+#
+# Titles were checked against the live API on 2026-09-13, after redirects: "Nuclear
+# power" is a redirect to "Power production", and redirects are never crawled, so the
+# label has to name the target. `ragtorio index recall` reports any label it cannot
+# find in the index rather than scoring it as a miss.
+
+queries:
+  - query: why does my oil refinery stop producing when one output backs up
+    relevant: [Oil processing, Fluid system]
+
+  - query: how do I get more petroleum gas without finding more crude oil
+    relevant: [Oil processing]
+
+  - query: what does pollution actually do to the biters near my base
+    relevant: [Pollution, Enemies]
+
+  - query: how do I read the contents of a chest with the circuit network
+    relevant: [Circuit network]
+
+  - query: why do my inserters and drills slow down when power runs short
+    relevant: [Electric system]
+
+  - query: how does placing nuclear reactors next to each other increase output
+    relevant: [Power production, Nuclear reactor]
+
+  - query: how much water does a boiler need and how many engines can it feed
+    relevant: [Boiler, Steam engine]
+
+  - query: what powers the base at night when solar panels stop
+    relevant: [Solar panel, Accumulator, Power production]
+
+  - query: how do I keep trains from deadlocking at a junction
+    relevant: [Rail signal, Rail chain signal, Railway]
+
+  - query: what is the difference between a rail signal and a chain signal
+    relevant: [Rail chain signal, Rail signal]
+
+  - query: do productivity modules make a machine use more power
+    relevant: [Module]
+
+  - query: how close do beacons need to be to affect a machine
+    relevant: [Beacon, Module]
+
+  - query: where do construction robots get the materials they place
+    relevant: [Roboport, Logistic network]
+
+  - query: why are my logistic robots idle with a full roboport network
+    relevant: [Logistic network, Roboport]
+
+  - query: how do I move fluid a long distance without losing throughput
+    relevant: [Fluid system, Pipe]
+
+  - query: how do I produce more uranium 235 than mining alone gives me
+    relevant: [Kovarex enrichment process, Uranium processing]
+
+  - query: how do items behave on belt corners and when belts merge
+    relevant: [Belt transport system]
+
+  - query: what can I burn in a locomotive and how far does it get me
+    relevant: [Fuel, Railway]
+
+  - query: what does a higher quality tier change about a machine
+    relevant: [Quality]
+
+  - query: how does food spoiling work and how do I deal with it
+    relevant: [Spoilage, Gleba]
+
+  - query: what do I need before I can build a space platform
+    relevant: [Space platform]
+
+  - query: what is required to launch a rocket
+    relevant: [Rocket silo]
+
+  - query: what should I build to defend against early biter attacks
+    relevant: [Enemies, Wall]
+
+  - query: how does armour equipment get charged
+    relevant: [Armor, Personal roboport]
+
+  - query: what can I place on top of landfill
+    relevant: [Landfill]
+
+  - query: how do I get rid of cliffs blocking my base
+    relevant: [Cliff explosives]
+
+  - query: how are science packs consumed while researching a technology
+    relevant: [Research, Technologies]
+
+  - query: why is my chemical plant refusing to take sulfuric acid
+    relevant: [Chemical plant, Fluid system]
+
+  - query: what is the most efficient way to turn oil into solid fuel
+    relevant: [Solid fuel, Oil processing]
+
+  - query: how far can heat pipes carry heat from a reactor before it drops
+    relevant: [Heat pipe, Heat exchanger, Power production]

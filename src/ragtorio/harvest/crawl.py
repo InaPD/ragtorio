@@ -185,26 +185,36 @@ class Crawler:
         return total
 
     def _redirect_pairs(self, namespace: int) -> Iterator[RawRedirect]:
-        """Every redirect in a namespace whose source is not a translation.
+        """Every redirect in a namespace whose two ends are both real English pages.
 
-        ``redirects=1`` makes the API resolve each redirect and report the pair, which
-        beats parsing ``#REDIRECT [[...]]`` out of wikitext.
+        Walked from the *target* side: ``prop=redirects`` hangs the pages pointing at
+        each page off that page, which beats both parsing ``#REDIRECT [[...]]`` out of
+        wikitext and ``list=allredirects``, whose entries name the target by title but
+        the source only by page id. ``redirects=1``, which would resolve the pairs
+        directly, is refused outright by the API alongside an ``allpages`` generator.
+
+        Both ends are filtered: a redirect *from* a translated subpage is noise, and a
+        redirect *to* one points at a page this crawl never stored.
         """
         chunks = self._client.query_paged(
             generator="allpages",
             gapnamespace=namespace,
-            gapfilterredir="redirects",
+            gapfilterredir="nonredirects",
             gaplimit=LIST_LIMIT,
-            redirects=1,
+            prop="redirects",
+            rdnamespace=namespace,
+            rdlimit="max",
         )
         for chunk in chunks:
-            for item in chunk.get("redirects", []):
-                source, target = item.get("from"), item.get("to")
-                if not source or not target:
+            for page in chunk.get("pages", []):
+                target = page.get("title")
+                if not target or self._translations.is_translation(target):
                     continue
-                if self._translations.is_translation(source):
-                    continue
-                yield RawRedirect(wiki=self.wiki, from_title=source, to_title=target)
+                for item in page.get("redirects", []):
+                    source = item.get("title")
+                    if not source or self._translations.is_translation(source):
+                        continue
+                    yield RawRedirect(wiki=self.wiki, from_title=source, to_title=target)
 
 
 def _to_stub(page: dict[str, Any]) -> PageStub | None:

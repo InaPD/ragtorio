@@ -9,9 +9,12 @@ research do I need before oil processing* - are answered from a knowledge graph 
 vector index. No model touches the ingestion pipeline, so no edge in the graph is
 hallucinated.
 
-> **Status: Phases 0-3 of 9 complete.** Scaffolding and wiki profile, the harvester,
-> template extraction, and entity resolution into a Neo4j graph. The vector index,
-> real routing, grounded answering and the benchmark are not built yet.
+> **Status: Phases 0-4 of 9 complete.** Scaffolding and wiki profile, the harvester,
+> template extraction, entity resolution into a Neo4j graph, and the vector index over
+> article prose. Real routing, grounded answering and the benchmark are not built yet.
+> Phase 4's recall target is still unmeasured with the real embedding model - the
+> pipeline runs end to end and the numbers so far are in
+> [docs/coverage/phase4-index.md](docs/coverage/phase4-index.md).
 > See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 ## Why this wiki is harder than it looks
@@ -72,6 +75,11 @@ ragtorio extract factorio                          # infobox templates -> fact r
 ragtorio graph load factorio                        # resolve facts, load into Neo4j
 ragtorio graph check factorio                       # orphans, gaps, self-cycles
 ragtorio ask factorio "raw ore for one electronic circuit" --graph-only
+
+pip install -e ".[embed]"                          # the local embedding model (pulls PyTorch)
+ragtorio index build factorio                      # article prose -> embedded chunks
+ragtorio index recall factorio                     # recall@k on the labeled query set
+ragtorio index recall factorio --ef-search 40,100,200   # pick the HNSW accuracy setting
 ```
 
 Copy `.env.example` to `.env` and set `RAGTORIO_CONTACT_EMAIL` before any crawl - wiki operators
@@ -136,6 +144,55 @@ batches needed are an expected-value calculation - the same reasoning the wiki's
 uses. `ragtorio ask --graph-only` is a stopgap: a regex, not real question routing, which is
 Phase 5's job.
 
+## The vector index
+
+The graph answers questions whose shape is a join. It cannot answer *why does my oil
+setup back up*, because that answer is a paragraph somebody wrote and was never a
+template parameter. `ragtorio index build` turns article prose into embedded, citable
+chunks so both halves can be retrieved for the same question.
+
+- **Sections, not sliding windows.** A wiki article is already segmented by its author
+  into units that answer one question each, and a `== heading ==` never cuts a
+  sentence. Sections over the token budget are packed greedily from whole paragraphs.
+  Every chunk keeps its heading trail, so a passage can be labelled *Oil processing >
+  Setting up oil processing > Tips* rather than arriving context-free.
+- **Tables are dropped from the text but not from the mentions.** A recipe table is the
+  graph's territory - Phase 2 already extracted it in a form that survives being
+  queried, and flattened into prose it would only dilute the section's embedding. Its
+  `{{Icon}}` calls still say, correctly, what the section is about.
+- **Mentions come from templates as much as from links.** This wiki writes
+  `{{Icon|Crude oil|100}}` far more often than it links crude oil. Each mention is
+  resolved through the same redirects and aliases the graph uses and filtered against
+  the titles that actually produced facts, so `chunk.mentioned_entity_ids` joins to
+  node ids instead of being a second, subtly different vocabulary. That is what lets
+  Phase 5 restrict retrieval to the entities its router resolved.
+- **Archived content is not indexed.** `Archive:` lives in namespace 3004 and the
+  profile points the chunker at namespace 0, so serving a removed item's article as
+  current cannot happen by accident.
+- **Embeddings are local by default** - `BAAI/bge-base-en-v1.5`, 768 dimensions -
+  because a benchmark claiming "hybrid beats vector-only" is worth nothing if the
+  baseline is a hosted endpoint that was retrained between the two runs. Voyage is
+  implemented as the alternative; it emits 1024 dimensions, and `index build` resizes
+  the column rather than making a provider switch a hand-written migration.
+
+`ragtorio index recall` scores the index against
+[30 hand-labeled queries](wikis/factorio.recall.yaml) - deliberately the questions the
+graph *cannot* answer. Labels are page titles rather than chunk ids, so they do not
+have to be rewritten every time the token budget changes, and a label naming a page
+that is not in the index is reported as a labelling bug rather than quietly counted as
+a retrieval failure. `--ef-search 40,100,200` sweeps the HNSW accuracy setting, which
+is how a value gets chosen for this index instead of copied from a blog post.
+
+Over the real crawl this comes to 2,301 chunks from 1,179 articles, 43% of them naming
+a graph entity. The first build came out at 3,951 - the `Version history/*` archive, 23
+machine-generated changelog pages, was 42% of the index on its own, and the build
+report's mention-coverage number is what surfaced it. Full write-up:
+[docs/coverage/phase4-index.md](docs/coverage/phase4-index.md).
+
+> The integration tests `TRUNCATE` their tables on `RAGTORIO_TEST_DSN`, which defaults
+> to the database `ragtorio harvest` writes to. Point it somewhere else before running
+> `make test` on a machine holding a crawl you want to keep.
+
 ## Adding a wiki
 
 A wiki is described by one YAML file in [`wikis/`](wikis/), validated on load. Nothing in
@@ -156,9 +213,9 @@ profile names a parser that has no implementation registered.
 ```
 wikis/factorio.yaml          the whole Factorio-specific surface
 src/ragtorio/
-  cli.py                     probe | profile | init-db | harvest | extract | graph | ask
+  cli.py                     probe | profile | init-db | harvest | extract | graph | index | ask
   config.py                  profile schema and loader, validated with pydantic
-  db/schema.sql              raw_page, raw_redirect, raw_category, crawl_run, fact
+  db/schema.sql              raw_page, raw_redirect, raw_category, crawl_run, fact, chunk
   db/neo4j.py                driver + schema application, mirrors db/connect.py
   harvest/client.py          rate-limited, retrying MediaWiki client
   harvest/probe.py           installed-versus-populated structured-data check
@@ -175,7 +232,16 @@ src/ragtorio/
   ontology/load.py           batched, idempotent MERGE writes via APOC
   ontology/check.py          orphans, incomplete recipes, self-cycles
   ontology/recipe_tree.py    an item's ingredients, recursively, down to raw materials
+  ontology/canonical.py      titles -> canonical titles, shared by resolution and indexing
+  index/chunk.py             articles -> section chunks, with the entities they mention
+  index/embed.py             EmbeddingProvider: local bge by default, Voyage, and a
+                             deterministic stand-in for tests
+  index/build.py             one build: chunk, embed, report what it produced
+  index/store.py             where chunks go, plus an exact-search in-memory one
+  index/postgres.py          pgvector + HNSW, and the column resize a provider swap needs
+  index/recall.py            recall@k on the labeled set, and the ef_search sweep
 wikis/factorio.aliases.yaml  community shorthand ("green circuit", "blue science")
+wikis/factorio.recall.yaml   30 hand-labeled queries the vector index is measured on
 tests/fixtures/wikitext/     committed wikitext, so extraction tests need no network
 docs/coverage/               what the wiki actually contains
 scripts/                     one-off Phase 0 measurement tools
