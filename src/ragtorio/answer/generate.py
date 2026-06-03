@@ -10,10 +10,13 @@ endpoint is what keeps a long answer from dying on an HTTP timeout, and the call
 form is what lets FastAPI forward tokens as they arrive. A caller that wants the whole
 answer simply passes no callback.
 
-**The system prompt is a constant, and cached.** It is the same bytes on every request,
-so it sits in front of the cache breakpoint and everything that varies - the question,
-the evidence, the citation instruction - comes after it. Editing it in a way that
-looks harmless still invalidates every cached prefix in flight, which is worth knowing
+**The system prompt is a constant, and marked cacheable.** It is the same bytes on every
+request, so it sits in front of the cache breakpoint and everything that varies - the
+question, the evidence, the citation instruction - comes after it. At roughly 430 tokens
+it is currently below the API's minimum cacheable prefix, so the breakpoint buys nothing
+yet; it is here because the alternative is remembering to add it on the day the prompt
+grows past the threshold, and because a prefix that is already stable costs nothing to
+mark. Editing it still invalidates anything that has cached, which is worth knowing
 before somebody reformats it.
 
 **Refusals are checked, not assumed away.** ``stop_reason`` is read before ``content``,
