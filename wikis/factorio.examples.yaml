@@ -1,0 +1,63 @@
+# The twenty questions `ragtorio examples run factorio` answers and writes into
+# docs/examples/. They are the Phase 6 exit criterion, not a demo reel, so the mix is
+# chosen to make the failure modes visible rather than to make the output look good:
+#
+#   - Multi-hop quantity questions, where the graph should carry the whole answer and
+#     the prose can only get in the way.
+#   - Questions where the number and the reason both matter, which is where labeling
+#     the two kinds of evidence separately either pays off or does not.
+#   - Pure prose questions, which have no graph fact to fall back on and are the ones
+#     most likely to attract a confident invented citation.
+#   - Two questions this wiki cannot answer, because an answer that says so is the
+#     result, and a system that confabulates one instead has failed the phase even if
+#     all eighteen others are perfect.
+#
+# `note` is printed above the answer in the saved document. It says what the question
+# is there to test, so a reader can tell a bad answer from an unfair question.
+
+questions:
+  - question: what raw ore does one electronic circuit cost
+    note: Three hops, verified by hand against the game data in Phase 3.
+  - question: how many copper plates does it take to make 10 electronic circuits
+    note: The same walk with a quantity on the front; the arithmetic has to survive it.
+  - question: break down an advanced circuit into raw materials
+    note: Crosses a fluid boundary - petroleum gas and coal, not just ore.
+  - question: what is a steel chest made from
+    note: One hop. The graph and the prose should agree, and the answer should be short.
+  - question: full ingredient tree for a nuclear reactor
+    note: Deep enough that a flat list of ingredients would be a wrong answer.
+  - question: what raw materials go into one express transport belt
+    note: Lubricant makes this cross into oil processing.
+
+  - question: what research do I need before advanced oil processing
+    note: Prerequisite chain; the order is the answer.
+  - question: which technology unlocks the assembling machine 3
+    note: Single unlock, plus whatever gates it.
+  - question: what do I have to research first to build a rocket silo
+    note: The longest chain in the game, and a test of how much of it is worth printing.
+
+  - question: what uses sulfuric acid
+    note: Fan-out rather than a chain; the cap on rows is visible here.
+  - question: what is the iron gear wheel used for
+    note: A very wide fan-out. A truncated list has to admit it is truncated.
+  - question: which recipes need uranium-235
+    note: Narrow fan-out over a fluid-adjacent chain with a probabilistic recipe behind it.
+
+  - question: which of the ores takes the longest to mine
+    note: A numeric comparison, which needs the property the profile declares comparable.
+
+  - question: why does kovarex enrichment need 40 uranium-238 to start
+    note: The number is a graph fact, the reason is prose. Both halves or neither.
+  - question: how does oil cracking work and when should I bother
+    note: Pure prose. Nothing here is an infobox parameter.
+  - question: what happens if a furnace runs out of fuel mid-smelt
+    note: Mechanics, likely thin in the wiki. A hedged answer beats a confident one.
+  - question: is it better to use electric furnaces or steel furnaces
+    note: Advice plus numbers, and the wiki does have an opinion.
+  - question: what is the difference between a splitter and an underground belt
+    note: Definitional prose, the kind a vector index is actually for.
+
+  - question: what is the best mod for train signals
+    note: Out of scope - the wiki documents the base game. The answer should say so.
+  - question: how much does a Factorio licence cost
+    note: Out of scope and nowhere in the corpus. This one exists to be refused.

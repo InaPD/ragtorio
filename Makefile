@@ -1,4 +1,4 @@
-.PHONY: help venv install install-embed lint typecheck test test-unit check up down fixtures harvest extract graph index route
+.PHONY: help venv install install-embed lint typecheck test test-unit check up down fixtures harvest extract graph index route examples serve
 
 VENV := .venv
 PY   := $(VENV)/bin/python
@@ -58,3 +58,9 @@ index:           ## chunk and embed articles, then measure recall (needs `make i
 
 route:           ## measure the router on its labeled set (needs ANTHROPIC_API_KEY)
 	$(VENV)/bin/ragtorio route eval factorio --show-failures
+
+examples:        ## answer the 20 example questions into docs/examples/ (needs ANTHROPIC_API_KEY)
+	$(VENV)/bin/ragtorio examples run factorio
+
+serve:           ## run the API on http://127.0.0.1:8000 (needs ANTHROPIC_API_KEY)
+	$(VENV)/bin/ragtorio serve factorio

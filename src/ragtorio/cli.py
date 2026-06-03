@@ -3,17 +3,28 @@
 Phase 0 shipped ``probe`` and ``profile``; Phase 1 added ``init-db`` and ``harvest``;
 Phase 2 added ``extract``; Phase 3 added ``graph load``/``graph check`` and a
 ``--graph-only`` stopgap for ``ask``; Phase 4 added ``index build``/``index recall``;
-Phase 5 replaces that stopgap with real routing and adds ``route eval``. Phase 6 adds
-grounded answering and the API.
+Phase 5 replaced that stopgap with real routing and added ``route eval``. Phase 6 makes
+``ask`` answer rather than only retrieve, and adds ``examples run`` and ``serve``.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
 
 import typer
 from neo4j import Driver
 from rich.console import Console
 from rich.table import Table
 
+from ragtorio.answer.examples import ExampleRun, run_examples, write_examples
+from ragtorio.answer.examples import load_examples as load_example_questions
+from ragtorio.answer.generate import AnswererUnavailableError, AnthropicAnswerer
+from ragtorio.answer.models import Answer
+from ragtorio.answer.pipeline import AnswerPipeline
+from ragtorio.answer.validate import format_citations, index_url_for
+from ragtorio.api.app import create_app
+from ragtorio.api.ratelimit import DEFAULT_LIMIT
 from ragtorio.config import Settings, WikiProfile, load_profile
 from ragtorio.db.connect import apply_schema, connect
 from ragtorio.db.neo4j import apply_schema as apply_neo4j_schema
@@ -62,6 +73,8 @@ index_app = typer.Typer(help="Chunk articles into a vector index and measure its
 app.add_typer(index_app, name="index")
 route_app = typer.Typer(help="Measure the question router against its labeled set.")
 app.add_typer(route_app, name="route")
+examples_app = typer.Typer(help="Answer the wiki's example questions and write them down.")
+app.add_typer(examples_app, name="examples")
 console = Console()
 
 VERDICT_STYLE = {
@@ -300,16 +313,19 @@ def ask(
     show_context: bool = typer.Option(
         False, "--show-context", help="Print the retrieved passages, not just the route."
     ),
+    retrieve_only: bool = typer.Option(
+        False, "--retrieve-only", help="Show what was retrieved and generate no answer."
+    ),
     dsn: str | None = typer.Option(None, help="Postgres DSN. Defaults to RAGTORIO_POSTGRES_DSN."),
     neo4j_uri: str | None = typer.Option(None, help="Defaults to RAGTORIO_NEO4J_URI."),
 ) -> None:
-    """Route a question, retrieve from the graph and the index, and show the context.
+    """Answer a question from the graph and the index, with every citation checked.
 
-    This is retrieval only. Generating a grounded answer from the context, with
-    citations validated against the chunk ids below, is Phase 6.
+    The route and the retrieved context are printed first, then the answer. Citations
+    name chunk ids that were actually retrieved; anything else is reported as an
+    unverified claim rather than quietly dropped.
     """
     settings = Settings()
-    profile_data = _load_profile_or_exit(wiki_id)
     forced = _intent_or_exit(intent)
     embedder = _build_provider_or_exit(provider, model)
 
@@ -318,20 +334,83 @@ def ask(
         _neo4j(settings, neo4j_uri) as driver,
     ):
         apply_schema(conn)
-        chunk_store: ChunkStore = PostgresChunkStore(conn)
-        log: RoutingLog = PostgresRoutingLog(conn)
-        pipeline = RetrievalPipeline(
-            wiki_id,
-            router=_router_or_exit(driver, wiki_id),
-            graph=GraphRetriever(driver, wiki_id, raw_items=profile_data.resolution.raw_item_set),
-            vector=VectorRetriever(chunk_store, embedder, wiki_id),
-            log=log,
-        )
+        retrieval = _retrieval_pipeline(wiki_id, conn, driver, embedder)
         try:
-            context = pipeline.retrieve(question, force_intent=forced)
+            context = retrieval.retrieve(question, force_intent=forced)
+            _render_context(context, show_context)
+            if retrieve_only:
+                return
+            answer = _answer_pipeline(wiki_id, retrieval).answer_from(context)
         except RouterUnavailableError as exc:
             raise _exit_on_unavailable_router(exc) from exc
-    _render_context(context, show_context)
+        except AnswererUnavailableError as exc:
+            raise _exit_on_unavailable_answerer(exc) from exc
+    _render_answer(answer)
+
+
+@examples_app.command(name="run")
+def examples_run(
+    wiki_id: str = typer.Argument(..., help="Profile id, e.g. 'factorio'."),
+    out: Path = typer.Option(
+        Path("docs/examples"), help="Directory to write the answered questions into."
+    ),
+    provider: str = typer.Option(
+        "sentence-transformers", help="Must match the provider the index was built with."
+    ),
+    model: str | None = typer.Option(None, help="Embedding model. Defaults to the provider's."),
+    dsn: str | None = typer.Option(None, help="Postgres DSN. Defaults to RAGTORIO_POSTGRES_DSN."),
+    neo4j_uri: str | None = typer.Option(None, help="Defaults to RAGTORIO_NEO4J_URI."),
+) -> None:
+    """Answer ``wikis/<wiki>.examples.yaml`` and write the answers to markdown.
+
+    This is the Phase 6 exit criterion made runnable: the citation resolution rate and
+    the p95 latency in the written document come from the run that produced it.
+    """
+    settings = Settings()
+    try:
+        questions = load_example_questions(wiki_id)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
+    embedder = _build_provider_or_exit(provider, model)
+
+    with (
+        connect(dsn or settings.postgres_dsn) as conn,
+        _neo4j(settings, neo4j_uri) as driver,
+    ):
+        apply_schema(conn)
+        pipeline = _answer_pipeline(wiki_id, _retrieval_pipeline(wiki_id, conn, driver, embedder))
+        try:
+            run = run_examples(wiki_id, pipeline, questions)
+        except RouterUnavailableError as exc:
+            raise _exit_on_unavailable_router(exc) from exc
+        except AnswererUnavailableError as exc:
+            raise _exit_on_unavailable_answerer(exc) from exc
+
+    written = write_examples(run, out)
+    _render_example_run(run, written[0], len(written) - 1)
+
+
+@app.command()
+def serve(
+    wiki_id: str = typer.Argument("factorio", help="Profile id, e.g. 'factorio'."),
+    host: str = typer.Option("127.0.0.1", help="Bind address. Use 0.0.0.0 in a container."),
+    port: int = typer.Option(8000, help="Port to listen on."),
+    rate_limit: int = typer.Option(DEFAULT_LIMIT, help="Requests per minute per client IP."),
+    provider: str = typer.Option(
+        "sentence-transformers", help="Must match the provider the index was built with."
+    ),
+    model: str | None = typer.Option(None, help="Embedding model. Defaults to the provider's."),
+) -> None:
+    """Serve POST /ask and GET /health.
+
+    The databases and the embedding model are opened once at startup, so the first
+    request does not pay for a model load.
+    """
+    import uvicorn  # imported here so the CLI's other commands do not pay for it
+
+    app_ = create_app(wiki_id, rate_limit=rate_limit, provider=provider, embedding_model=model)
+    uvicorn.run(app_, host=host, port=port)
 
 
 @route_app.command(name="eval")
@@ -559,6 +638,44 @@ def _exit_on_unavailable_router(exc: RouterUnavailableError) -> typer.Exit:
     return typer.Exit(code=1)
 
 
+def _exit_on_unavailable_answerer(exc: AnswererUnavailableError) -> typer.Exit:
+    """Same for the answering model, which has no degraded mode to fall back on."""
+    console.print(f"[red]answering is unavailable[/] - {exc}")
+    return typer.Exit(code=1)
+
+
+def _retrieval_pipeline(
+    wiki_id: str,
+    conn: Any,
+    driver: Driver,
+    embedder: EmbeddingProvider,
+) -> RetrievalPipeline:
+    """The Phase 5 pipeline, wired to open resources the caller owns."""
+    profile_data = _load_profile_or_exit(wiki_id)
+    chunk_store: ChunkStore = PostgresChunkStore(conn)
+    log: RoutingLog = PostgresRoutingLog(conn)
+    return RetrievalPipeline(
+        wiki_id,
+        router=_router_or_exit(driver, wiki_id),
+        graph=GraphRetriever(
+            driver,
+            wiki_id,
+            raw_items=profile_data.resolution.raw_item_set,
+            recipe_suffix=profile_data.resolution.recipe_suffix,
+            retrieval=profile_data.retrieval,
+        ),
+        vector=VectorRetriever(chunk_store, embedder, wiki_id),
+        log=log,
+    )
+
+
+def _answer_pipeline(wiki_id: str, retrieval: RetrievalPipeline) -> AnswerPipeline:
+    """The Phase 6 pipeline on top of it. The index URL comes from the profile's API
+    URL, so a citation links to the wiki the answer was actually read from."""
+    profile_data = _load_profile_or_exit(wiki_id)
+    return AnswerPipeline(retrieval, AnthropicAnswerer(), index_url_for(profile_data.wiki.api))
+
+
 def _render_context(context: RetrievedContext, show_context: bool) -> None:
     """Print the route and what it retrieved."""
     route = context.route
@@ -585,6 +702,52 @@ def _render_context(context: RetrievedContext, show_context: bool) -> None:
             for chunk_id in context.chunk_ids:
                 console.print(f"  {chunk_id}")
     console.print()
+
+
+def _render_answer(answer: Answer) -> None:
+    """Print the answer, then what backs it and what does not."""
+    if answer.is_refusal:
+        console.print("[yellow]the model declined to answer this question[/]")
+        return
+
+    console.print(f"\n[bold]answer[/]\n{answer.text or '(empty)'}\n")
+
+    if answer.cited_graph:
+        console.print("[green]graph facts[/] cited as [graph]")
+    for line in format_citations(answer.citations):
+        console.print(f"[green]cited[/] {line}")
+    if answer.unverified:
+        console.print("\n[red]unverified[/] these claims cite sources that were not retrieved:")
+        for claim in answer.unverified:
+            console.print(f"  {claim}")
+
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_row("generations", str(answer.attempts))
+    table.add_row("tokens", f"{answer.usage.input_tokens:,} in, {answer.usage.output_tokens:,} out")
+    table.add_row("latency", f"{answer.latency_ms:,.0f} ms total ({answer.generation_ms:,.0f} ms)")
+    console.print()
+    console.print(table)
+
+
+def _render_example_run(run: ExampleRun, index_path: Path, documents: int) -> None:
+    """Print what the example run produced, with the exit criterion called out."""
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_row("questions", f"{len(run.answers):,}")
+    table.add_row("citations", f"{run.citations:,}")
+    resolved = "[green]100%[/]" if run.citations_resolve else "[red]not all[/]"
+    table.add_row("citations resolve", resolved)
+    table.add_row("unverified answers", f"{len(run.unverified):,}")
+    table.add_row("regenerated once", f"{run.regenerated:,}")
+    table.add_row("refused", f"{run.refusals:,}")
+    table.add_row("latency", f"p50 {run.p50_ms:,.0f} ms, p95 {run.p95_ms:,.0f} ms")
+    table.add_row(
+        "tokens",
+        f"{run.input_tokens:,} in ({run.cache_read_tokens:,} cached), {run.output_tokens:,} out",
+    )
+    console.print(table)
+    console.print(f"\n[green]OK[/] wrote {documents} answers and {index_path}")
+    for answer in run.unverified:
+        console.print(f"[red]unverified[/] {answer.question}")
 
 
 def _render_router_report(report: RouterReport, show_failures: bool) -> None:

@@ -1,10 +1,12 @@
-"""``ragtorio ask`` and ``ragtorio route eval`` end to end, with the router stubbed.
+"""``ragtorio ask`` and ``ragtorio route eval`` end to end, with the models stubbed.
 
-The router is the one component that needs credentials, so it is the one component
-these tests replace. Everything else is real: a real Postgres with a real chunk index,
-a real Neo4j with a real graph, and the merge, budget and logging in between. What is
-being checked is the wiring - that a route reaches both stores, that the context comes
-back labeled, and that every question lands in ``routing_log``.
+The router and the answering model are the two components that need credentials, so
+they are the two components these tests replace. Everything else is real: a real
+Postgres with a real chunk index, a real Neo4j with a real graph, and the merge,
+budget, generation and citation validation in between. What is being checked is the
+wiring - that a route reaches both stores, that the context comes back labeled, that
+an answer's citations resolve to real revisions, and that every question lands in
+``routing_log``.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from neo4j.exceptions import Neo4jError, ServiceUnavailable
 from typer.testing import CliRunner
 
 from ragtorio import cli
+from ragtorio.answer.models import Generation
 from ragtorio.cli import app
 from ragtorio.db.connect import apply_schema, connect
 from ragtorio.db.neo4j import apply_schema as apply_neo4j_schema
@@ -187,7 +190,34 @@ def stub_the_router(monkeypatch: pytest.MonkeyPatch):
     return install
 
 
+class StubAnswerer:
+    """Answers with whatever it was handed, and records the prompt it was given."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.prompts: list[str] = []
+
+    def generate(self, messages, on_text=None) -> Generation:  # type: ignore[no-untyped-def]
+        self.prompts.append(str(messages[0]["content"]))
+        return Generation(text=self.text, model="stub", stop_reason="end_turn")
+
+
+@pytest.fixture
+def stub_the_answerer(monkeypatch: pytest.MonkeyPatch):
+    def install(text: str) -> StubAnswerer:
+        answerer = StubAnswerer(text)
+        monkeypatch.setattr(cli, "AnthropicAnswerer", lambda: answerer)
+        return answerer
+
+    return install
+
+
 def ask(*args: str) -> object:
+    """Retrieval only. Answering needs the model stubbed, which ``answer`` does."""
+    return answer(*args, "--retrieve-only")
+
+
+def answer(*args: str) -> object:
     return runner.invoke(
         app,
         [
@@ -264,6 +294,46 @@ def test_every_question_is_written_to_the_routing_log(conn, graph, stub_the_rout
     assert (question, intent, template) == ("what does a testium plate cost", "both", "recipe_tree")
     assert entities == [f"{WIKI}:Testium plate"]
     assert chunk_ids == [f"{WIKI}:1:0000"]
+
+
+def test_an_answer_cites_a_retrieved_chunk_and_links_to_its_revision(
+    conn, graph, stub_the_router, stub_the_answerer
+):
+    """The Phase 6 exit criterion, end to end: the citation in the answer resolves to
+    a chunk that was retrieved, and renders as a revision-pinned wiki URL."""
+    stub_the_router(stub_route("vector"))
+    stub_the_answerer(f"Testium plate is smelted from testium ore [{WIKI}:1:0000].")
+    result = answer("how is testium smelted")
+
+    assert result.exit_code == 0, result.output
+    assert "index.php?title=Testium_plate&oldid=7" in result.output
+    assert "unverified" not in result.output
+
+
+def test_a_fabricated_citation_is_retried_once_and_then_reported(
+    conn, graph, stub_the_router, stub_the_answerer
+):
+    """The stub answers the same way both times, which is the case the plan cares
+    about: the claim ships labeled rather than silently stripped."""
+    stub_the_router(stub_route("vector"))
+    stub_the_answerer(f"Smelted from ore [{WIKI}:9:9999].")
+    result = answer("how is testium smelted")
+
+    assert result.exit_code == 0, result.output
+    assert "unverified" in result.output
+    assert "generations" in result.output
+
+
+def test_the_evidence_reaches_the_answering_model_labeled(
+    conn, graph, stub_the_router, stub_the_answerer
+):
+    stub_the_router(stub_route("both", "recipe_tree", "Testium plate"))
+    answerer = stub_the_answerer("Two testium ore [graph].")
+    answer("what does a testium plate cost")
+
+    prompt = answerer.prompts[0]
+    assert "<graph_facts>" in prompt and "<passages>" in prompt
+    assert "Testium ore" in prompt
 
 
 def test_route_eval_scores_the_labeled_set(graph, stub_the_router):

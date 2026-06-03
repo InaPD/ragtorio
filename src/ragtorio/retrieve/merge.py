@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from ragtorio.index.chunk import estimate_tokens
-from ragtorio.index.models import ChunkMatch
+from ragtorio.index.models import Chunk, ChunkMatch
 from ragtorio.retrieve.models import ContextBlock, GraphResult, RetrievedContext, Route
 
 #: Total context tokens. Comfortable for an answering prompt and small enough that the
@@ -49,7 +49,7 @@ def merge(
         blocks.append(ContextBlock(label="graph_facts", text=text, tokens=tokens))
         remaining -= tokens
 
-    kept, chunk_ids = _fit(passages, remaining)
+    kept, chunks = _fit(passages, remaining)
     if kept:
         text = "\n\n".join(kept)
         blocks.append(ContextBlock(label="passages", text=text, tokens=estimate_tokens(text)))
@@ -58,13 +58,13 @@ def merge(
         question=route.question,
         route=route,
         blocks=tuple(blocks),
-        chunk_ids=tuple(chunk_ids),
+        passages=tuple(chunks),
         graph=graph,
         latency_ms=latency_ms,
     )
 
 
-def _fit(passages: Sequence[ChunkMatch], budget: int) -> tuple[list[str], list[str]]:
+def _fit(passages: Sequence[ChunkMatch], budget: int) -> tuple[list[str], list[Chunk]]:
     """Render passages in rank order until the budget runs out.
 
     Deduplication is by ``chunk_id``: the vector retriever can legitimately return the
@@ -72,7 +72,7 @@ def _fit(passages: Sequence[ChunkMatch], budget: int) -> tuple[list[str], list[s
     copies of a passage in a prompt reads to the model as corroboration.
     """
     rendered: list[str] = []
-    chunk_ids: list[str] = []
+    kept: list[Chunk] = []
     seen: set[str] = set()
 
     for match in passages:
@@ -85,7 +85,7 @@ def _fit(passages: Sequence[ChunkMatch], budget: int) -> tuple[list[str], list[s
             continue  # a later, shorter passage may still fit
         seen.add(chunk.chunk_id)
         rendered.append(text)
-        chunk_ids.append(chunk.chunk_id)
+        kept.append(chunk)
         budget -= tokens
 
-    return rendered, chunk_ids
+    return rendered, kept

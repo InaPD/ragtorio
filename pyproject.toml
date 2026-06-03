@@ -21,6 +21,8 @@ dependencies = [
     "mwparserfromhell>=0.6",
     "neo4j>=5.0",
     "anthropic>=1,<2",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]

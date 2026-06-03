@@ -13,6 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ragtorio.index.models import Chunk
+
 #: Which halves of the system to consult. ``both`` is the safe answer and the one a
 #: low-confidence route falls back to.
 Intent = Literal["graph", "vector", "both"]
@@ -120,16 +122,27 @@ class ContextBlock(BaseModel):
 
 
 class RetrievedContext(BaseModel):
-    """Everything one question retrieved, ready for Phase 6 to render and cite."""
+    """Everything one question retrieved, ready for Phase 6 to render and cite.
+
+    The passages are carried whole rather than as the ids alone. Phase 6 has to turn a
+    citation back into ``index.php?title=X&oldid=N``, and the page title and revision
+    that URL needs live on the chunk; looking them up again from the id would be a
+    second query against a store the answerer has no reason to hold open.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     question: str
     route: Route
     blocks: tuple[ContextBlock, ...] = ()
-    chunk_ids: tuple[str, ...] = ()
+    passages: tuple[Chunk, ...] = ()
     graph: GraphResult | None = None
     latency_ms: float = 0.0
+
+    @property
+    def chunk_ids(self) -> tuple[str, ...]:
+        """The ids a citation may name, in the order they were given to the model."""
+        return tuple(chunk.chunk_id for chunk in self.passages)
 
     @property
     def total_tokens(self) -> int:

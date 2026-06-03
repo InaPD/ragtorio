@@ -9,15 +9,16 @@ research do I need before oil processing* - are answered from a knowledge graph 
 vector index. No model touches the ingestion pipeline, so no edge in the graph is
 hallucinated.
 
-> **Status: Phases 0-5 of 9 complete.** Scaffolding and wiki profile, the harvester,
+> **Status: Phases 0-6 of 9 complete.** Scaffolding and wiki profile, the harvester,
 > template extraction, entity resolution into a Neo4j graph, the vector index over
-> article prose, and routing with the four query templates. Grounded answering, the API
-> and the benchmark are not built yet.
-> Two exit criteria are unmeasured for want of credentials on this machine: Phase 4's
-> recall target needs the local embedding model installed, and Phase 5's router needs
-> an Anthropic key. Everything else is measured -
+> article prose, routing with the four query templates, and grounded answering with
+> validated citations behind `POST /ask`. The benchmark is not built yet.
+> Three exit criteria are unmeasured for want of credentials on this machine: Phase 4's
+> recall target needs the local embedding model installed, and Phase 5's router and
+> Phase 6's twenty example answers need an Anthropic key. Everything else is measured -
 > [phase4-index.md](docs/coverage/phase4-index.md),
-> [phase5-retrieval.md](docs/coverage/phase5-retrieval.md).
+> [phase5-retrieval.md](docs/coverage/phase5-retrieval.md),
+> [phase6-answering.md](docs/coverage/phase6-answering.md).
 > See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 ## Why this wiki is harder than it looks
@@ -83,10 +84,22 @@ ragtorio index build factorio                      # article prose -> embedded c
 ragtorio index recall factorio                     # recall@k on the labeled query set
 ragtorio index recall factorio --ef-search 40,100,200   # pick the HNSW accuracy setting
 
-export ANTHROPIC_API_KEY=...                       # routing only; ingestion needs no key
+export ANTHROPIC_API_KEY=...                       # routing and answering; ingestion needs no key
 ragtorio ask factorio "what raw ore does one electronic circuit cost"
 ragtorio ask factorio "why does my refinery stall" --show-context
+ragtorio ask factorio "what uses sulfuric acid" --retrieve-only   # skip the answer
 ragtorio route eval factorio --show-failures       # router accuracy on the labeled set
+
+ragtorio examples run factorio                     # answer the 20 example questions
+ragtorio serve factorio                            # POST /ask and GET /health on :8000
+```
+
+```bash
+curl -s localhost:8000/health
+curl -s localhost:8000/ask -H 'content-type: application/json' \
+  -d '{"question": "what raw ore does one electronic circuit cost"}'
+curl -N localhost:8000/ask -H 'content-type: application/json' \
+  -d '{"question": "how does oil cracking work", "stream": true}'
 ```
 
 Copy `.env.example` to `.env` and set `RAGTORIO_CONTACT_EMAIL` before any crawl - wiki operators
@@ -247,6 +260,49 @@ packs and the one Phase 0 dismissed contains the technology tree. All three are 
 and written up in [phase5-retrieval.md](docs/coverage/phase5-retrieval.md), with the
 twelve template checks and the router's still-unmeasured accuracy.
 
+## Grounded answering
+
+`ragtorio ask` routes, retrieves, and then hands the evidence to `claude-opus-5` with
+adaptive thinking on and a system prompt that is the same bytes on every request, so it
+sits in front of the cache breakpoint and everything per-question comes after it.
+
+**The two kinds of evidence stay labeled all the way into the prompt.** A recipe tree
+arrives as a nested list with a quantity on every line and a raw-material total at the
+end; a research chain arrives numbered, because the order is the answer. The prompt says
+what each label means - a graph fact is an infobox parameter extracted mechanically, a
+passage is prose that may describe a different version of the game - and what to do when
+they disagree.
+
+**Every citation is checked against the chunk ids that question actually retrieved.**
+Graph facts cite `[graph]`, and citing that when no graph facts were retrieved counts as
+fabricated too. An unknown id triggers exactly one regeneration, with the offending
+*sentences* quoted back - a retry that only says "a citation was wrong" gets the same
+text with the citations quietly removed, which is worse. If the second attempt fails,
+the claim ships labeled `unverified` rather than silently cleaned up, and the API says
+so in a field rather than in English.
+
+Citations render as `index.php?title=X&oldid=N`. Pinned to the revision the chunk was
+embedded from, because an answer that links to the live page cannot be checked six
+months later: the page has moved on, and there is no way to tell a wrong answer from a
+changed game.
+
+A streamed answer is never regenerated. The reader has already seen the first attempt,
+and replacing it mid-response would be worse than admitting the citation was bad, so the
+final SSE event carries the unverified claims instead.
+
+`POST /ask` takes `{question, stream?}` and returns the answer, its citations, the route
+that produced it and a `grounded` flag; `GET /health` runs a trivial query against both
+stores and answers 503 when either is down, because a health check that only proves the
+web server started is how a deployment with an unreachable graph looks healthy for a
+week. Requests are capped per client IP, in process - which is honest about what it is:
+enough for the single container this ships as, and wrong the moment there are two of
+them behind a load balancer. No stack trace ever reaches a response body.
+
+`ragtorio examples run factorio` answers
+[the twenty questions](wikis/factorio.examples.yaml) the phase is measured on and writes
+them to `docs/examples/`, with the citation resolution rate and the p95 latency computed
+from that run rather than typed in afterwards.
+
 ## Adding a wiki
 
 A wiki is described by one YAML file in [`wikis/`](wikis/), validated on load.
@@ -292,7 +348,8 @@ exists; it does not prove any actual wiki fits through it.
 ```
 wikis/factorio.yaml          the whole Factorio-specific surface
 src/ragtorio/
-  cli.py                     probe | profile | init-db | harvest | extract | graph | index | route | ask
+  cli.py                     probe | profile | init-db | harvest | extract | graph |
+                             index | route | ask | examples | serve
   config.py                  profile schema and loader, validated with pydantic
   db/schema.sql              raw_page, raw_redirect, raw_category, crawl_run, fact, chunk, routing_log
   db/neo4j.py                driver + schema application, mirrors db/connect.py
@@ -327,11 +384,21 @@ src/ragtorio/
   retrieve/merge.py          labeled context blocks under a token budget
   retrieve/pipeline.py       question -> route -> both halves -> merged context
   retrieve/evaluate.py       router accuracy on the labeled question set
+  answer/render.py           context -> prompt: nested recipe trees, numbered chains
+  answer/generate.py         one opus call: streamed, cached prefix, refusal-aware
+  answer/validate.py         citations checked against the retrieved chunk ids
+  answer/pipeline.py         generate, validate, regenerate once, then admit what failed
+  answer/examples.py         the 20-question run and the documents it writes
+  api/app.py                 POST /ask (JSON or SSE), GET /health, one shared pipeline
+  api/schemas.py             request and response bodies, validated at the boundary
+  api/ratelimit.py           per-IP sliding window, in process
 wikis/factorio.aliases.yaml  community shorthand ("green circuit", "blue science")
 wikis/factorio.recall.yaml   30 hand-labeled queries the vector index is measured on
 wikis/factorio.routing.yaml  45 hand-labeled questions the router is measured on
+wikis/factorio.examples.yaml 20 questions answered into docs/examples/
 tests/fixtures/wikitext/     committed wikitext, so extraction tests need no network
 docs/coverage/               what the wiki actually contains
+docs/examples/               answered questions, with every citation clickable
 scripts/                     one-off Phase 0 measurement tools
 ```
 
