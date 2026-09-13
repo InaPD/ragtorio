@@ -8,6 +8,25 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+
+    # The extraction layer runs offline, but the harvest store is only meaningfully
+    # tested against a real Postgres: upserts and the unique title index are exactly
+    # what a fake would get wrong.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ragtorio
+          POSTGRES_PASSWORD: ragtorio
+          POSTGRES_DB: ragtorio
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U ragtorio -d ragtorio"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -29,7 +48,10 @@ jobs:
       - name: Typecheck
         run: mypy
 
-      # No network access is needed: every HTTP call is mocked with respx and the
-      # wikitext fixtures are committed.
+      # No internet access is needed: every HTTP call is mocked with respx and the
+      # wikitext fixtures are committed. The integration tests talk only to the
+      # Postgres service above, and skip themselves if it is not reachable.
       - name: Test
         run: pytest
+        env:
+          RAGTORIO_TEST_DSN: postgresql://ragtorio:ragtorio@localhost:5433/ragtorio

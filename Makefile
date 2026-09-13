@@ -1,4 +1,4 @@
-.PHONY: help venv install lint typecheck test check up down fixtures
+.PHONY: help venv install lint typecheck test test-unit check up down fixtures harvest
 
 VENV := .venv
 PY   := $(VENV)/bin/python
@@ -15,14 +15,17 @@ install: venv    ## install the package and dev dependencies
 	$(PIP) install -q -e ".[dev]"
 
 lint:            ## ruff check + format check
-	$(VENV)/bin/ruff check src tests
-	$(VENV)/bin/ruff format --check src tests
+	$(VENV)/bin/ruff check src tests scripts
+	$(VENV)/bin/ruff format --check src tests scripts
 
 typecheck:       ## mypy strict
 	$(VENV)/bin/mypy
 
-test:            ## pytest with coverage gate
+test:            ## pytest with coverage gate (integration tests need `make up`)
 	$(VENV)/bin/pytest
+
+test-unit:       ## pytest without the tests that need a database
+	$(VENV)/bin/pytest -m "not integration"
 
 check: lint typecheck test  ## everything CI runs
 
@@ -34,3 +37,6 @@ down:            ## stop databases
 
 fixtures:        ## refetch the committed wikitext fixtures from the live wiki
 	$(VENV)/bin/python scripts/fetch_fixtures.py
+
+harvest:         ## crawl the Factorio wiki into Postgres (set RAGTORIO_CONTACT_EMAIL first)
+	$(VENV)/bin/ragtorio harvest factorio

@@ -62,10 +62,29 @@ make check            # ruff, mypy strict, pytest with an 80% coverage gate
 
 ragtorio probe https://wiki.factorio.com/api.php   # inspect any MediaWiki wiki
 ragtorio profile factorio                          # validate the shipped wiki profile
+
+ragtorio init-db                                   # create the tables
+ragtorio harvest factorio --dry-run --limit 20     # crawl into memory, write nothing
+ragtorio harvest factorio                          # full crawl into Postgres
 ```
 
 Copy `.env.example` to `.env` and set `RAGTORIO_CONTACT_EMAIL` before any crawl - wiki operators
 expect a working contact address in the User-Agent.
+
+## Harvesting
+
+`ragtorio harvest` runs two passes per namespace. The first lists pages and their current
+revision ids, which is cheap: 500 per request, no article text. The second fetches wikitext and
+categories only for the pages whose revision id changed, 50 at a time because that is the most
+the API will give. A re-crawl of an unchanged wiki therefore issues a handful of listing
+requests and downloads no article text at all.
+
+Translated subpages (`Iron plate/de`, about twenty per article) are dropped before the fetch
+pass. The filter intersects the title shape with the language codes the wiki itself reports
+through `siteinfo`, so a real page like `Blueprint/tips` survives while `Iron plate/de` does not.
+
+Raw wikitext is stored verbatim. Everything downstream is recomputable from the `raw_*` tables
+without touching the wiki again, which is what makes a parser change cheap.
 
 ## Adding a wiki
 
@@ -86,10 +105,15 @@ If the new wiki's infobox grammar differs, add one pure function to
 ```
 wikis/factorio.yaml          the whole Factorio-specific surface
 src/ragtorio/
-  cli.py                     ragtorio probe | profile  (harvest, extract, ... to come)
+  cli.py                     probe | profile | init-db | harvest  (extract, ... to come)
   config.py                  profile schema and loader, validated with pydantic
+  db/schema.sql              raw_page, raw_redirect, raw_category, crawl_run
   harvest/client.py          rate-limited, retrying MediaWiki client
   harvest/probe.py           installed-versus-populated structured-data check
+  harvest/crawl.py           two-pass crawl: list revisions, fetch only what changed
+  harvest/language.py        translated-subpage filter, driven by the wiki's own codes
+  harvest/store.py           the persistence a crawl needs, plus an in-memory one
+  harvest/postgres.py        the Postgres implementation of that protocol
 tests/fixtures/wikitext/     committed wikitext, so extraction tests need no network
 docs/coverage/               what the wiki actually contains
 scripts/                     one-off Phase 0 measurement tools

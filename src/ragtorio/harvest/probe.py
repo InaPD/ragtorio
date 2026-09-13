@@ -8,7 +8,6 @@ probe that reads the extension list alone would send you down a path that dead-e
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -16,15 +15,13 @@ from urllib.parse import urlsplit
 import httpx
 
 from ragtorio.harvest.client import MediaWikiClient, MediaWikiError
+from ragtorio.harvest.language import LANGUAGE_SUFFIX
 
 #: Extensions that can hold typed data, as opposed to merely querying or templating it.
 STRUCTURED_EXTENSIONS = ("SemanticMediaWiki", "Cargo")
 
 #: Properties Semantic MediaWiki creates on install. Their presence proves nothing.
 SMW_BUILTIN_PREFIXES = ("Foaf:", "Owl:", "Skos:", "Dc:", "Dct:", "Rdf:", "Rdfs:")
-
-#: A trailing ``/de``, ``/zh``, ``/pt-br`` marks a translated subpage.
-LANGUAGE_SUFFIX = re.compile(r"/[a-z]{2,3}(?:-[a-z]{2,4})?$")
 
 Verdict = Literal["template_only", "populated", "installed_but_empty"]
 
